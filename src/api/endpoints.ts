@@ -1,100 +1,107 @@
-/** Typed API surface. Swap the backend by setting VITE_API_BASE_URL — nothing else changes. */
 import { get, post, put } from "./client";
 import type {
-  AuditEntry,
-  CreateRunRequest,
-  DashboardData,
-  DecisionRequest,
-  Detector,
-  FindingDetail,
-  FindingView,
-  MatchPair,
-  MatchPairView,
-  ProposedRule,
-  Report,
-  ReportRequest,
-  RerunRequest,
-  ReviewItem,
-  Rule,
-  RulesResponse,
-  Run,
-  RunEvent,
-  SearchResult,
-  Settings,
-  UnmatchedResponse,
-  UploadedFile,
-  Comment,
+  Brand,
+  BrandRule,
+  Campaign,
+  CampaignRevision,
+  FactItem,
+  FindingOverride,
+  GovernanceAnalytics,
+  GovernanceAuditEntry,
+  GovernanceComment,
+  KnowledgeDocument,
+  ReviewQueueResponse,
+  VisualAsset,
 } from "./types";
 
-const qs = (o: Record<string, string | undefined>) => {
-  const p = new URLSearchParams(Object.entries(o).filter(([, v]) => v) as [string, string][]);
-  const s = p.toString();
-  return s ? `?${s}` : "";
-};
-
 export const api = {
-  dashboard: () => get<DashboardData>("/dashboard"),
-  search: (q: string) => get<SearchResult>(`/search${qs({ q })}`),
-
-  upload: (file: File, kind: "bank" | "ledger", accountId?: string) => {
-    const fd = new FormData();
-    fd.append("file", file);
-    fd.append("kind", kind);
-    if (accountId) fd.append("accountId", accountId);
-    return post<UploadedFile>("/uploads", fd);
+  // Brands
+  brands: {
+    list: () => get<Brand[]>("/brands"),
+    get: (id: string) => get<Brand>(`/brands/${id}`),
+    create: (data: Partial<Brand>) => post<Brand>("/brands", data),
+    update: (id: string, data: Partial<Brand>) => put<Brand>(`/brands/${id}`, data),
   },
-  retryOcr: (uploadId: string) => post<UploadedFile>(`/uploads/${uploadId}/ocr`),
 
-  runs: () => get<Run[]>("/runs"),
-  run: (id: string) => get<Run>(`/runs/${id}`),
-  createRun: (body: CreateRunRequest) => post<Run>("/runs", body as unknown as Record<string, unknown>),
-  matches: (runId: string) => get<MatchPairView[]>(`/runs/${runId}/matches`),
-  unmatched: (runId: string) => get<UnmatchedResponse>(`/runs/${runId}/unmatched`),
-  findings: (runId: string) => get<FindingView[]>(`/runs/${runId}/findings`),
-  activity: (runId: string) => get<{ events: RunEvent[]; audit: AuditEntry[] }>(`/runs/${runId}/activity`),
-  rerun: (runId: string, body: RerunRequest) => post<{ matchesGained: number; pairIds: string[] }>(`/runs/${runId}/rerun`, body as unknown as Record<string, unknown>),
-  finalize: (runId: string) => post<Run>(`/runs/${runId}/finalize`),
-  archiveRuns: (ids: string[]) => post<{ archived: number }>("/runs/bulk-archive", { ids }),
+  // Brand Brain
+  brain: {
+    listDocuments: (brandId: string) => get<KnowledgeDocument[]>(`/brain/documents?brand_id=${brandId}`),
+    upload: (formData: FormData) => post<{ documentId: string; status: string }>("/brain/upload", formData),
+    listFacts: (brandId: string) => get<FactItem[]>(`/brain/facts?brand_id=${brandId}`),
+    createFact: (brandId: string, data: Partial<FactItem>) => post<FactItem>(`/brain/facts?brand_id=${brandId}`, data),
+    listVisuals: (brandId: string) => get<VisualAsset[]>(`/brain/visuals?brand_id=${brandId}`),
+    listRules: (brandId: string) => get<BrandRule[]>(`/brain/rules?brand_id=${brandId}`),
+    updateRule: (ruleId: string, data: Partial<BrandRule>) => put<BrandRule>(`/brain/rules/${ruleId}`, data),
+    search: (brandId: string, q: string) => get<unknown[]>(`/brain/search?brand_id=${brandId}&q=${encodeURIComponent(q)}`),
+  },
 
-  finding: (id: string) => get<FindingDetail>(`/findings/${id}`),
-  decide: (id: string, body: DecisionRequest) => post<FindingDetail>(`/findings/${id}/decision`, body as unknown as Record<string, unknown>),
-  bulkDecide: (ids: string[], action: "approve") => post<{ updated: number }>("/findings/bulk-decision", { ids, action }),
-  comment: (id: string, body: string) => post<Comment>(`/findings/${id}/comments`, { body }),
+  // Campaigns & Audits
+  campaigns: {
+    list: (params?: { brandId?: string; status?: string; channel?: string }) => {
+      const sp = new URLSearchParams();
+      if (params?.brandId) sp.set("brand_id", params.brandId);
+      if (params?.status) sp.set("status", params.status);
+      if (params?.channel) sp.set("channel", params.channel);
+      const qs = sp.toString();
+      return get<Campaign[]>(`/campaigns${qs ? `?${qs}` : ""}`);
+    },
+    get: (id: string) => get<Campaign>(`/campaigns/${id}`),
+    create: (data: {
+      brand_id: string;
+      name: string;
+      channel: string;
+      department: string;
+      region: string;
+      agency: string;
+      target_audience: string;
+      content_text: string;
+      asset_urls?: string[];
+    }) => post<Campaign>("/campaigns", data),
+    revisions: (id: string) => get<CampaignRevision[]>(`/campaigns/${id}/revisions`),
+    scan: (id: string) => post<{ brandReadinessScore: number; fastTrackEligible: boolean; findingsCount: number }>(`/campaigns/${id}/scan`),
+    acceptRewrite: (
+      id: string,
+      data: { finding_id: string; rewrite_mode: string; custom_text?: string },
+    ) => post<Campaign>(`/campaigns/${id}/rewrites/accept`, data),
+    requestOverride: (
+      id: string,
+      data: { finding_id: string; justification: string; risk_acknowledged?: boolean },
+    ) => post<{ status: string; overrideId: string }>(`/campaigns/${id}/override`, data),
+    transition: (id: string, data: { target_status: string; reason?: string }) =>
+      post<Campaign>(`/campaigns/${id}/transition`, data),
+    diff: (id: string, revA?: number, revB?: number) =>
+      get<{ revA: number; revB: number; wordDiff: Array<{ type: string; text: string }>; unifiedDiff: string[] }>(
+        `/campaigns/${id}/diff?rev_a=${revA ?? 1}${revB ? `&rev_b=${revB}` : ""}`,
+      ),
+    comments: (id: string) => get<GovernanceComment[]>(`/campaigns/${id}/comments`),
+    addComment: (id: string, data: { body: string; finding_id?: string }) =>
+      post<GovernanceComment>(`/campaigns/${id}/comments`, data),
+  },
 
-  manualMatch: (body: { runId: string; bankTxnIds: string[]; ledgerTxnIds: string[]; note: string }) => post<MatchPair>("/matches/manual", body),
-  unmatch: (pairId: string, runId: string, reason: string) => post<{ ok: true }>(`/matches/${pairId}/unmatch`, { runId, reason }),
+  // Review Queue
+  queue: {
+    get: () => get<ReviewQueueResponse>("/queue"),
+    decideOverride: (overrideId: string, data: { approve: boolean; decision_note?: string }) =>
+      post<FindingOverride>(`/queue/overrides/${overrideId}/decide`, data),
+    escalate: (campaignId: string) => post<{ status: string }>(`/queue/campaigns/${campaignId}/escalate`),
+  },
 
-  reviewQueue: () => get<ReviewItem[]>("/review-queue"),
+  // Governance Analytics & Friction Detector
+  analytics: {
+    get: (brandId?: string) => get<GovernanceAnalytics>(`/analytics?brand_id=${brandId || "BRAND-ACME-01"}`),
+    friction: (brandId?: string) => get<unknown[]>(`/analytics/friction?brand_id=${brandId || "BRAND-ACME-01"}`),
+  },
 
-  rules: () => get<RulesResponse>("/rules"),
-  decideRule: (id: string, body: { action: "approve" | "edit_approve" | "reject"; params?: Record<string, unknown>; reason?: string }) => post<ProposedRule>(`/rules/${id}/decision`, body),
-  updateRule: (id: string, body: Partial<Rule>) => put<Rule>(`/rules/${id}`, body as Record<string, unknown>),
-  updateDetector: (id: string, body: Partial<Detector>) => put<Detector>(`/detectors/${id}`, body as Record<string, unknown>),
-  testDetector: (id: string, body: { runId: string; threshold: number; weight: number; enabled: boolean }) =>
-    post<{ flaggedNow: number; flaggedAfter: number; newlyFlagged: number; cleared: number; routedToReviewDelta: number; sample: { id: string; text: string }[] }>(`/detectors/${id}/test`, body),
-
-  reports: () => get<Report[]>("/reports"),
-  createReport: (body: ReportRequest) => post<Report>("/reports", body as unknown as Record<string, unknown>),
-  downloadReport: (id: string) => get<Report>(`/reports/${id}/download`),
-
-  audit: (f: { actor?: string; q?: string; from?: string; to?: string; runId?: string }) => get<AuditEntry[]>(`/audit${qs(f)}`),
-
-  settings: () => get<Settings>("/settings"),
-  updateSettings: (body: Partial<Settings>) => put<Settings>("/settings", body as Record<string, unknown>),
-};
-
-export const qk = {
-  dashboard: ["dashboard"] as const,
-  runs: ["runs"] as const,
-  run: (id: string) => ["runs", id] as const,
-  matches: (id: string) => ["runs", id, "matches"] as const,
-  unmatched: (id: string) => ["runs", id, "unmatched"] as const,
-  findings: (id: string) => ["runs", id, "findings"] as const,
-  activity: (id: string) => ["runs", id, "activity"] as const,
-  finding: (id: string) => ["findings", id] as const,
-  reviewQueue: ["review-queue"] as const,
-  rules: ["rules"] as const,
-  reports: ["reports"] as const,
-  audit: (f: object) => ["audit", f] as const,
-  settings: ["settings"] as const,
+  // Governance Audit Log
+  audit: {
+    list: (params?: { actor?: string; action?: string; limit?: number }) => {
+      const sp = new URLSearchParams();
+      if (params?.actor) sp.set("actor", params.actor);
+      if (params?.action) sp.set("action", params.action);
+      if (params?.limit) sp.set("limit", String(params.limit));
+      const qs = sp.toString();
+      return get<GovernanceAuditEntry[]>(`/audit${qs ? `?${qs}` : ""}`);
+    },
+    verify: () => get<{ valid: boolean; count: number; message: string; brokenAtSeq?: number }>("/audit/verify"),
+  },
 };

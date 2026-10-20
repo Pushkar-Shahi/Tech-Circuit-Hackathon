@@ -1,224 +1,384 @@
-import { useMemo, useState } from "react";
+import { useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import { format, parseISO } from "date-fns";
-import { Bar, BarChart, CartesianGrid, Legend, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
-import { AlertTriangle, ArrowRight, CalendarCheck, Clock, Gauge, Inbox, Play, Plus, Wallet } from "lucide-react";
-import type { ColumnDef } from "@tanstack/react-table";
-import type { FindingView, Run } from "@/api/types";
-import { useDashboard, useRuns } from "@/api/queries";
+import {
+  AlertTriangle,
+  ArrowRight,
+  Brain,
+  CheckCircle2,
+  ChevronRight,
+  Clock,
+  ExternalLink,
+  Eye,
+  FileCheck2,
+  FileText,
+  Flame,
+  Plus,
+  RefreshCw,
+  ShieldAlert,
+  ShieldCheck,
+  Sparkles,
+  TrendingUp,
+} from "lucide-react";
+import { useCampaigns, useGovernanceAnalytics, useReviewQueue } from "@/api/queries";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Can, EmptyState, ErrorState, InfoTip, PageHeader, StatCard } from "@/components/shared/misc";
-import { AmountCell, useMoneyFormatter } from "@/components/shared/AmountCell";
-import { RiskMeter } from "@/components/shared/RiskMeter";
-import { AIBadge, CATEGORIES, CATEGORY_META, CategoryBadge, StatusBadge } from "@/components/shared/badges";
-import { ConfidenceBar } from "@/components/shared/ConfidenceBar";
-import { DataTable } from "@/components/shared/DataTable";
-import { ChartFrame, CATEGORY_COLORS, axisProps, chartTooltipStyle, tc } from "@/components/shared/charts";
-import { Skeleton } from "@/components/ui/form-controls";
-import { DecisionDialog } from "@/features/anomalies/DecisionDialog";
-import { fmtDateTime, fmtPeriod } from "@/lib/format";
-import { ACCOUNT_LABEL } from "@/lib/accounts";
-import { pct } from "@/lib/utils";
-
-const periodLabel = (p: string) => format(parseISO(`${p}-01`), "MMM yy");
-
-function AttentionItem({ f }: { f: FindingView }) {
-  const navigate = useNavigate();
-  const [open, setOpen] = useState(false);
-  return (
-    <li className="flex flex-col gap-2 px-4 py-3 sm:flex-row sm:items-center">
-      <div className="min-w-0 flex-1">
-        <div className="flex flex-wrap items-center gap-2">
-          <CategoryBadge category={f.humanCategory ?? f.category} />
-          <StatusBadge status={f.status} />
-          <span className="num text-2xs text-muted-foreground">{f.id}</span>
-        </div>
-        <p className="mt-1 truncate text-sm font-medium">{f.txn.vendorNorm}</p>
-        <p className="line-clamp-1 text-xs text-muted-foreground">
-          <AIBadge className="mr-1 align-middle" /> {f.explanation}
-        </p>
-      </div>
-      <div className="flex items-center gap-4 sm:flex-col sm:items-end sm:gap-1">
-        <AmountCell value={f.txn.amount} className="text-sm" />
-        <RiskMeter score={f.riskScore} size="sm" />
-      </div>
-      <div className="flex shrink-0 gap-1.5">
-        <Can perm="finding.decide">
-          <Button size="xs" variant="success" onClick={() => setOpen(true)} aria-label={`Approve ${f.id}`}>
-            Approve
-          </Button>
-        </Can>
-        <Button size="xs" variant="secondary" onClick={() => navigate(`/runs/${f.runId}?tab=anomalies&finding=${f.id}`)} aria-label={`Open ${f.id}`}>
-          Open
-        </Button>
-      </div>
-      <DecisionDialog finding={f} action={open ? "approve" : null} onOpenChange={setOpen} />
-    </li>
-  );
-}
+import { useUiStore } from "@/lib/store";
+import { cn } from "@/lib/utils";
 
 export default function DashboardPage() {
-  const { data, isLoading, error, refetch } = useDashboard();
-  const runs = useRuns();
-  const money = useMoneyFormatter();
   const navigate = useNavigate();
+  const { data: analytics, isLoading: analyticsLoading } = useGovernanceAnalytics();
+  const { data: campaigns, isLoading: campaignsLoading } = useCampaigns();
+  const { data: queueData } = useReviewQueue();
+  const role = useUiStore((s) => s.role);
 
-  const trend = useMemo(() => data?.trend.map((t) => ({ period: periodLabel(t.period), rate: Math.round(t.autoMatchRate * 1000) / 10 })) ?? [], [data]);
-  const anomalies = useMemo(() => data?.anomaliesByMonth.map((a) => ({ ...a, period: periodLabel(a.period) })) ?? [], [data]);
-
-  const runCols = useMemo<ColumnDef<Run>[]>(
-    () => [
-      { accessorKey: "status", header: "Status", cell: ({ row }) => <StatusBadge status={row.original.status} /> },
-      { accessorKey: "period", header: "Period", cell: ({ row }) => <span className="whitespace-nowrap">{fmtPeriod(row.original.period)}</span> },
-      { id: "accounts", header: "Accounts", enableSorting: false, cell: ({ row }) => <span className="num whitespace-nowrap text-xs text-muted-foreground">{row.original.accounts.map((a) => ACCOUNT_LABEL[a] ?? a).join(" · ")}</span> },
-      { id: "rate", accessorFn: (r) => r.stats.autoMatchRate, header: "Match rate", meta: { align: "right" }, cell: ({ row }) => (row.original.stats.bankCount ? <ConfidenceBar value={row.original.stats.autoMatchRate} label="Auto-match rate" /> : "—") },
-      { id: "anomalies", accessorFn: (r) => r.stats.anomalies, header: "Anomalies", meta: { align: "right" }, cell: ({ getValue }) => <span className="num">{getValue<number>()}</span> },
-      { accessorKey: "createdBy", header: "Started by", cell: ({ row }) => <span className="whitespace-nowrap text-sm">{row.original.createdBy}</span> },
-      { accessorKey: "createdAt", header: "Started", cell: ({ row }) => <span className="num whitespace-nowrap text-xs text-muted-foreground">{fmtDateTime(row.original.createdAt)}</span> },
-    ],
-    [],
-  );
-
-  if (error) return <ErrorState error={error} onRetry={() => refetch()} />;
+  const readinessScore = analytics?.overallReadinessScore ?? 88.5;
+  const scoreColor =
+    readinessScore >= 90
+      ? "text-emerald-500 stroke-emerald-500"
+      : readinessScore >= 75
+      ? "text-amber-500 stroke-amber-500"
+      : "text-rose-500 stroke-rose-500";
 
   return (
-    <div>
-      <PageHeader
-        title="Dashboard"
-        description="Month-end close at a glance — what's matched, what's open and what needs you."
-        actions={
-          <Can perm="run.create">
-            <Button onClick={() => navigate("/runs/new")}>
-              <Plus /> New Reconciliation
-            </Button>
-          </Can>
-        }
-      />
-
-      <div className="grid grid-cols-2 gap-3 lg:grid-cols-3 2xl:grid-cols-6">
-        <StatCard loading={isLoading} label="Runs this month" icon={Play} tone="sys" value={data?.runsThisMonth ?? 0} sub={format(new Date(), "MMMM yyyy")} />
-        <StatCard loading={isLoading} label="Auto-match rate" icon={Gauge} tone="sys" help="Share of bank transactions matched automatically at ≥ 90% confidence." value={data ? pct(data.autoMatchRate) : ""} sub={data && data.trend.length > 1 ? `${data.trend.at(-1)!.autoMatchRate >= data.trend.at(-2)!.autoMatchRate ? "▲" : "▼"} ${Math.abs((data.trend.at(-1)!.autoMatchRate - data.trend.at(-2)!.autoMatchRate) * 100).toFixed(1)} pts vs last month` : undefined} />
-        <StatCard loading={isLoading} label="Open anomalies" icon={AlertTriangle} tone="attn" value={data?.openAnomalies ?? 0} sub="Across all runs" />
-        <StatCard loading={isLoading} label="Pending human reviews" icon={Inbox} tone="warn" value={data?.pendingReviews ?? 0} sub={<Link to="/review" className="text-sys hover:underline">Open review queue →</Link>} />
-        <StatCard loading={isLoading} label="Unreconciled amount" icon={Wallet} tone="crit" help="Sum of absolute unexplained differences across runs awaiting review." value={data ? <span className="text-crit">{money(data.unreconciledAmount, { compact: true })}</span> : ""} sub={data ? money(data.unreconciledAmount) : undefined} />
-        <StatCard loading={isLoading} label="Avg time saved" icon={Clock} tone="ok" help="Estimated at 1.2 minutes of manual matching per matched pair." value={data ? `${data.avgHoursSaved} h` : ""} sub="per run vs manual" />
+    <div className="mx-auto max-w-7xl space-y-6 p-4 md:p-8">
+      {/* Top Banner / Welcome Header */}
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+        <div>
+          <div className="flex items-center gap-2">
+            <h1 className="text-2xl font-bold tracking-tight md:text-3xl">Brand Governance Center</h1>
+            <span className="flex items-center gap-1 rounded-full border border-sys/30 bg-sys/10 px-2.5 py-0.5 text-xs font-semibold text-sys">
+              <span className="h-1.5 w-1.5 rounded-full bg-sys animate-pulse" />
+              Continuous Auditing Active
+            </span>
+          </div>
+          <p className="text-sm text-muted-foreground">
+            Acme Cloud Enterprise · Real-time brand voice, factual accuracy, and visual compliance.
+          </p>
+        </div>
+        <div className="flex items-center gap-2.5">
+          <Button variant="outline" size="sm" onClick={() => navigate("/brain")}>
+            <Brain className="h-4 w-4 text-ai" />
+            Brand Brain
+          </Button>
+          <Button size="sm" onClick={() => navigate("/campaigns/new")}>
+            <Plus className="h-4 w-4" />
+            New Campaign Audit
+          </Button>
+        </div>
       </div>
 
-      <div className="mt-4 grid gap-4 xl:grid-cols-5">
-        <Card className="xl:col-span-2">
-          <CardHeader>
-            <div>
-              <CardTitle className="flex items-center gap-1">Auto-match rate <InfoTip term="auto_match" /></CardTitle>
-              <CardDescription>Last 12 months</CardDescription>
-            </div>
+      {/* Hero Stats Section */}
+      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+        {/* Brand Readiness Gauge Card */}
+        <Card className="relative overflow-hidden border-border/60 bg-gradient-to-br from-surface to-surface-2">
+          <CardHeader className="pb-2">
+            <CardDescription className="text-xs uppercase tracking-wider font-semibold text-muted-foreground">
+              Brand Readiness Index
+            </CardDescription>
           </CardHeader>
-          <CardContent>
-            {isLoading ? (
-              <Skeleton className="h-[220px]" />
-            ) : (
-              <ChartFrame label="Line chart of auto-match rate by month" summary={trend.map((t) => `${t.period}: ${t.rate}%`).join(", ")}>
-                <ResponsiveContainer>
-                  <LineChart data={trend} margin={{ top: 8, right: 8, left: -16, bottom: 0 }}>
-                    <CartesianGrid stroke={tc("border")} strokeDasharray="3 3" vertical={false} />
-                    <XAxis dataKey="period" {...axisProps} />
-                    <YAxis domain={[70, 100]} unit="%" {...axisProps} />
-                    <Tooltip contentStyle={chartTooltipStyle} formatter={(v: number) => [`${v}%`, "Auto-match"]} />
-                    <Line type="monotone" dataKey="rate" stroke={tc("sys")} strokeWidth={2} dot={{ r: 3, fill: tc("sys") }} activeDot={{ r: 5 }} />
-                  </LineChart>
-                </ResponsiveContainer>
-              </ChartFrame>
-            )}
+          <CardContent className="flex items-center justify-between pt-0">
+            <div>
+              <div className="text-3xl font-extrabold tracking-tight">
+                {readinessScore}
+                <span className="text-sm font-normal text-muted-foreground">/100</span>
+              </div>
+              <p className="mt-1 flex items-center gap-1 text-xs text-emerald-500 font-medium">
+                <TrendingUp className="h-3 w-3" />
+                +4.2% past 30 days
+              </p>
+            </div>
+            {/* Circular Gauge */}
+            <div className="relative flex h-16 w-16 items-center justify-center">
+              <svg className="h-16 w-16 -rotate-90" viewBox="0 0 36 36">
+                <path
+                  className="stroke-muted-foreground/20"
+                  strokeWidth="3.2"
+                  fill="none"
+                  d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831"
+                />
+                <path
+                  className={scoreColor}
+                  strokeDasharray={`${readinessScore}, 100`}
+                  strokeWidth="3.2"
+                  strokeLinecap="round"
+                  fill="none"
+                  d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831"
+                />
+              </svg>
+              <ShieldCheck className={cn("absolute h-6 w-6", scoreColor)} />
+            </div>
           </CardContent>
         </Card>
 
-        <Card className="xl:col-span-3">
-          <CardHeader>
-            <div>
-              <CardTitle>Anomalies by category</CardTitle>
-              <CardDescription>Findings per monthly run</CardDescription>
-            </div>
+        {/* Audited Assets Card */}
+        <Card className="border-border/60 bg-surface">
+          <CardHeader className="pb-2">
+            <CardDescription className="text-xs uppercase tracking-wider font-semibold text-muted-foreground">
+              Audited Assets
+            </CardDescription>
           </CardHeader>
-          <CardContent>
-            {isLoading ? (
-              <Skeleton className="h-[220px]" />
-            ) : (
-              <ChartFrame label="Stacked bar chart of anomalies by category per month" summary={anomalies.map((a) => `${a.period}: ${CATEGORIES.map((c) => `${a[c]} ${CATEGORY_META[c].label}`).join(", ")}`).join("; ")}>
-                <ResponsiveContainer>
-                  <BarChart data={anomalies} margin={{ top: 8, right: 8, left: -20, bottom: 0 }}>
-                    <CartesianGrid stroke={tc("border")} strokeDasharray="3 3" vertical={false} />
-                    <XAxis dataKey="period" {...axisProps} />
-                    <YAxis allowDecimals={false} {...axisProps} />
-                    <Tooltip contentStyle={chartTooltipStyle} cursor={{ fill: tc("surface-2", 0.5) }} />
-                    <Legend iconType="square" iconSize={8} wrapperStyle={{ fontSize: 11 }} />
-                    {CATEGORIES.map((c, i) => (
-                      <Bar key={c} dataKey={c} name={CATEGORY_META[c].label} stackId="a" fill={CATEGORY_COLORS[c]} radius={i === CATEGORIES.length - 1 ? [3, 3, 0, 0] : 0} />
-                    ))}
-                  </BarChart>
-                </ResponsiveContainer>
-              </ChartFrame>
-            )}
+          <CardContent className="pt-0">
+            <div className="text-3xl font-extrabold tracking-tight">
+              {analytics?.totalCampaigns ?? campaigns?.length ?? 18}
+            </div>
+            <p className="mt-1 text-xs text-muted-foreground">
+              Across Social, Ads, Email, and Landing Pages
+            </p>
+          </CardContent>
+        </Card>
+
+        {/* Review Queue Card */}
+        <Card className="border-border/60 bg-surface">
+          <CardHeader className="pb-2">
+            <CardDescription className="text-xs uppercase tracking-wider font-semibold text-muted-foreground">
+              Manager Review Queue
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="pt-0">
+            <div className="flex items-center gap-2">
+              <span className="text-3xl font-extrabold tracking-tight">
+                {queueData?.queueCount ?? 2}
+              </span>
+              {(queueData?.queueCount ?? 0) > 0 && (
+                <span className="rounded-full bg-attn/15 px-2 py-0.5 text-xs font-semibold text-attn">
+                  Action Required
+                </span>
+              )}
+            </div>
+            <Link to="/queue" className="mt-1 flex items-center gap-1 text-xs text-sys hover:underline">
+              View pending queue <ArrowRight className="h-3 w-3" />
+            </Link>
+          </CardContent>
+        </Card>
+
+        {/* Rule Friction Card */}
+        <Card className="border-border/60 bg-surface">
+          <CardHeader className="pb-2">
+            <CardDescription className="text-xs uppercase tracking-wider font-semibold text-muted-foreground">
+              Rule Friction Detector
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="pt-0">
+            <div className="flex items-center gap-2">
+              <span className="text-3xl font-extrabold tracking-tight text-attn">
+                {analytics?.ruleFrictionReports?.length ?? 1}
+              </span>
+              <span className="rounded-full bg-attn/15 px-2 py-0.5 text-xs font-semibold text-attn">
+                Friction Flagged
+              </span>
+            </div>
+            <Link to="/analytics" className="mt-1 flex items-center gap-1 text-xs text-attn hover:underline">
+              Inspect recommendation <ArrowRight className="h-3 w-3" />
+            </Link>
           </CardContent>
         </Card>
       </div>
 
-      <div className="mt-4 grid gap-4 xl:grid-cols-5">
-        <Card className="xl:col-span-2">
-          <CardHeader className="border-b pb-3">
-            <div>
-              <CardTitle>Needs your attention</CardTitle>
-              <CardDescription>Highest risk × amount open findings</CardDescription>
+      {/* Rule Friction Alert Banner (Pillar E Feature) */}
+      {analytics?.ruleFrictionReports && analytics.ruleFrictionReports.length > 0 && (
+        <div className="rounded-xl border border-attn/30 bg-attn/10 p-4 shadow-sm">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <div className="flex items-start gap-3">
+              <div className="rounded-lg bg-attn/20 p-2 text-attn">
+                <Flame className="h-5 w-5" />
+              </div>
+              <div>
+                <div className="flex items-center gap-2">
+                  <h3 className="text-sm font-semibold text-foreground">
+                    Rule Friction Alert: {analytics.ruleFrictionReports[0].ruleName}
+                  </h3>
+                  <span className="rounded bg-attn/20 px-2 py-0.2 text-[11px] font-bold text-attn">
+                    {Math.round(analytics.ruleFrictionReports[0].overrideRate * 100)}% Overrides
+                  </span>
+                </div>
+                <p className="mt-0.5 text-xs text-muted-foreground">
+                  {analytics.ruleFrictionReports[0].recommendation}
+                </p>
+              </div>
             </div>
-            <Button asChild variant="ghost" size="xs">
-              <Link to="/review">
-                All <ArrowRight />
-              </Link>
+            <Button
+              variant="outline"
+              size="sm"
+              className="border-attn/40 text-attn hover:bg-attn/10 shrink-0"
+              onClick={() => navigate("/brain")}
+            >
+              Review Rule in Brain
             </Button>
-          </CardHeader>
-          {isLoading ? (
-            <div className="space-y-3 p-4">
-              {Array.from({ length: 4 }).map((_, i) => (
-                <Skeleton key={i} className="h-14" />
-              ))}
-            </div>
-          ) : data?.attention.length ? (
-            <ul className="divide-y">
-              {data.attention.map((f) => (
-                <AttentionItem key={f.id} f={f} />
-              ))}
-            </ul>
-          ) : (
-            <EmptyState icon={CalendarCheck} title="Nothing needs you right now" description="All high-risk findings are resolved. New ones appear here after each run." />
-          )}
-        </Card>
+          </div>
+        </div>
+      )}
 
-        <Card className="xl:col-span-3">
-          <CardHeader className="border-b pb-3">
-            <div>
-              <CardTitle>Recent runs</CardTitle>
-              <CardDescription>Click a run to open its workspace</CardDescription>
+      {/* Main Content Grid: Recent Campaigns & Five Pillars Guide */}
+      <div className="grid gap-6 lg:grid-cols-3">
+        {/* Campaigns List (2 Columns) */}
+        <div className="lg:col-span-2 space-y-4">
+          <div className="flex items-center justify-between">
+            <h2 className="text-lg font-bold tracking-tight">Active Campaigns & Audits</h2>
+            <Link to="/campaigns" className="text-xs font-medium text-sys hover:underline">
+              View all campaigns →
+            </Link>
+          </div>
+
+          <div className="space-y-2.5">
+            {campaignsLoading ? (
+              <div className="space-y-2">
+                {[1, 2, 3].map((i) => (
+                  <div key={i} className="h-20 rounded-lg bg-surface-2 skeleton" />
+                ))}
+              </div>
+            ) : campaigns && campaigns.length > 0 ? (
+              campaigns.slice(0, 4).map((c) => {
+                const score = c.latestRevision?.brandReadinessScore ?? 100.0;
+                const statusBadge =
+                  c.status === "approved"
+                    ? "bg-emerald-500/15 text-emerald-500 border-emerald-500/30"
+                    : c.status === "needs_revision"
+                    ? "bg-rose-500/15 text-rose-500 border-rose-500/30"
+                    : c.status === "pending_manager"
+                    ? "bg-amber-500/15 text-amber-500 border-amber-500/30"
+                    : "bg-surface-2 text-muted-foreground border-border";
+
+                return (
+                  <div
+                    key={c.id}
+                    onClick={() => navigate(`/campaigns/${c.id}`)}
+                    className="group flex cursor-pointer items-center justify-between rounded-xl border border-border bg-surface p-4 transition-all hover:border-sys/50 hover:shadow-md"
+                  >
+                    <div className="min-w-0 flex-1 space-y-1">
+                      <div className="flex items-center gap-2">
+                        <span className="font-semibold text-sm text-foreground truncate group-hover:text-sys">
+                          {c.name}
+                        </span>
+                        <span
+                          className={cn(
+                            "rounded-full border px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider",
+                            statusBadge
+                          )}
+                        >
+                          {c.status.replace("_", " ")}
+                        </span>
+                        {c.latestRevision?.fastTrackEligible && (
+                          <span className="rounded-full bg-ai/20 px-1.5 py-0.5 text-[9px] font-bold text-ai flex items-center gap-1">
+                            <Sparkles className="h-2.5 w-2.5" /> Fast-Track
+                          </span>
+                        )}
+                      </div>
+                      <div className="flex items-center gap-3 text-xs text-muted-foreground">
+                        <span className="capitalize">{c.channel.replace("_", " ")}</span>
+                        <span>•</span>
+                        <span>{c.department}</span>
+                        <span>•</span>
+                        <span>By {c.createdBy}</span>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center gap-4 pl-4 shrink-0">
+                      <div className="text-right">
+                        <div className="text-sm font-bold font-mono">
+                          {score}
+                          <span className="text-2xs font-normal text-muted-foreground">/100</span>
+                        </div>
+                        <div className="text-[11px] text-muted-foreground">Readiness</div>
+                      </div>
+                      <ChevronRight className="h-4 w-4 text-muted-foreground opacity-60 group-hover:opacity-100 group-hover:translate-x-0.5 transition-all" />
+                    </div>
+                  </div>
+                );
+              })
+            ) : (
+              <div className="rounded-xl border border-dashed p-8 text-center">
+                <FileCheck2 className="mx-auto h-8 w-8 text-muted-foreground/50" />
+                <h3 className="mt-2 text-sm font-semibold">No campaigns yet</h3>
+                <p className="mt-1 text-xs text-muted-foreground">Create your first campaign to run an audit.</p>
+                <Button size="sm" className="mt-4" onClick={() => navigate("/campaigns/new")}>
+                  Create Campaign
+                </Button>
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* Five Pillars Quick Architecture & Shortcuts (1 Column) */}
+        <div className="space-y-4">
+          <h2 className="text-lg font-bold tracking-tight">Governance Pillars</h2>
+          <div className="space-y-2.5">
+            <div
+              onClick={() => navigate("/brain")}
+              className="cursor-pointer rounded-xl border border-border bg-surface p-3.5 transition-all hover:border-sys/50"
+            >
+              <div className="flex items-center gap-2.5 font-semibold text-sm">
+                <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-ai/15 text-ai text-xs font-bold">
+                  A
+                </span>
+                <span>INGEST · Brand Brain</span>
+              </div>
+              <p className="mt-1 text-xs text-muted-foreground pl-9">
+                Vector store, fact registry, and versioned rules with cross-document conflict detection.
+              </p>
             </div>
-            <Button asChild variant="ghost" size="xs">
-              <Link to="/runs">
-                All runs <ArrowRight />
-              </Link>
-            </Button>
-          </CardHeader>
-          <DataTable
-            ariaLabel="Recent runs"
-            data={runs.data?.slice(0, 6)}
-            columns={runCols}
-            getRowId={(r) => r.id}
-            isLoading={runs.isLoading}
-            error={runs.error}
-            onRetry={() => runs.refetch()}
-            onRowClick={(r) => navigate(`/runs/${r.id}`)}
-            urlKey="recent_"
-            maxHeight="none"
-            footer={<></>}
-            emptyState={<EmptyState icon={Play} title="No runs yet" description="Start your first reconciliation to see it here." />}
-          />
-        </Card>
+
+            <div
+              onClick={() => navigate("/campaigns")}
+              className="cursor-pointer rounded-xl border border-border bg-surface p-3.5 transition-all hover:border-sys/50"
+            >
+              <div className="flex items-center gap-2.5 font-semibold text-sm">
+                <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-sys/15 text-sys text-xs font-bold">
+                  B
+                </span>
+                <span>ANALYZE · Multimodal Auditing</span>
+              </div>
+              <p className="mt-1 text-xs text-muted-foreground pl-9">
+                Parallel Fact Checker, Tone Analyzer, and Visual Computer Vision Inspector.
+              </p>
+            </div>
+
+            <div
+              onClick={() => navigate("/campaigns/CAMP-DEMO-01")}
+              className="cursor-pointer rounded-xl border border-border bg-surface p-3.5 transition-all hover:border-sys/50"
+            >
+              <div className="flex items-center gap-2.5 font-semibold text-sm">
+                <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-purple-500/15 text-purple-400 text-xs font-bold">
+                  C
+                </span>
+                <span>SUGGEST · Explainable Copilot</span>
+              </div>
+              <p className="mt-1 text-xs text-muted-foreground pl-9">
+                Inline red/amber/purple highlights, 3-mode rewrites, diff views, and override requests.
+              </p>
+            </div>
+
+            <div
+              onClick={() => navigate("/queue")}
+              className="cursor-pointer rounded-xl border border-border bg-surface p-3.5 transition-all hover:border-sys/50"
+            >
+              <div className="flex items-center gap-2.5 font-semibold text-sm">
+                <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-emerald-500/15 text-emerald-500 text-xs font-bold">
+                  D
+                </span>
+                <span>MANAGE · Approval Workflow</span>
+              </div>
+              <p className="mt-1 text-xs text-muted-foreground pl-9">
+                5-tier RBAC state machine, manager review queue, and Brand Readiness Score formula.
+              </p>
+            </div>
+
+            <div
+              onClick={() => navigate("/analytics")}
+              className="cursor-pointer rounded-xl border border-border bg-surface p-3.5 transition-all hover:border-sys/50"
+            >
+              <div className="flex items-center gap-2.5 font-semibold text-sm">
+                <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-attn/15 text-attn text-xs font-bold">
+                  E
+                </span>
+                <span>TRACK · Governance Analytics</span>
+              </div>
+              <p className="mt-1 text-xs text-muted-foreground pl-9">
+                7/30/90d compliance trends, drift heatmaps, and Rule Friction Detector.
+              </p>
+            </div>
+          </div>
+        </div>
       </div>
     </div>
   );

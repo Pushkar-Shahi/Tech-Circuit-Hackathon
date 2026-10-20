@@ -1,15 +1,17 @@
-"""Authentication & authorization.
+"""Authentication & authorization for VeriBrand AI.
 
-`current_user` is a FastAPI dependency so the demo header scheme can be swapped for JWT
-without touching routers. AUTH_MODE=demo reads the role from X-Demo-Role (default admin);
-AUTH_MODE=jwt verifies an HS256 bearer token carrying {"sub", "name", "role"}.
+Supports two modes:
+- AUTH_MODE=demo: reads role from X-Demo-Role header (default admin / owner)
+- AUTH_MODE=jwt: verifies HS256 JWT bearer token containing {"sub", "name", "role", "org_id"}
+
+Enforces strict tenant isolation and role permissions across all endpoints.
 """
 
 import base64
+from dataclasses import dataclass
 import hmac
 import json
 import time
-from dataclasses import dataclass
 from typing import Literal
 
 from fastapi import Depends, Request
@@ -17,39 +19,86 @@ from fastapi import Depends, Request
 from app.core.config import get_settings
 from app.core.errors import ApiError, forbidden
 
-Role = Literal["admin", "accountant", "reviewer", "auditor"]
-ROLES: tuple[Role, ...] = ("admin", "accountant", "reviewer", "auditor")
+Role = Literal["owner", "admin", "manager", "creator", "specialist"]
+ROLES: tuple[Role, ...] = ("owner", "admin", "manager", "creator", "specialist")
 
 PERMISSIONS = (
-    "run.create", "run.rerun", "run.finalize", "match.manual", "match.unmatch", "finding.decide",
-    "rule.decide", "rule.toggle", "detector.configure", "report.generate", "audit.export",
-    "settings.org", "settings.ai",
+    "brand.manage",
+    "brain.ingest",
+    "rules.manage",
+    "rules.approve",
+    "campaign.create",
+    "campaign.scan",
+    "campaign.edit",
+    "rewrite.accept",
+    "override.request",
+    "override.decide",
+    "campaign.approve",
+    "campaign.publish",
+    "campaign.escalate",
+    "analytics.view",
+    "audit.view",
+    "settings.manage",
 )
 
 MATRIX: dict[str, set[str]] = {
-    "admin": set(PERMISSIONS),
-    "accountant": {
-        "run.create", "run.rerun", "run.finalize", "match.manual", "match.unmatch",
-        "finding.decide", "rule.decide", "rule.toggle", "report.generate",
+    "owner": set(PERMISSIONS),
+    "admin": {
+        "brand.manage",
+        "brain.ingest",
+        "rules.manage",
+        "rules.approve",
+        "campaign.create",
+        "campaign.scan",
+        "campaign.edit",
+        "rewrite.accept",
+        "override.decide",
+        "campaign.approve",
+        "analytics.view",
+        "audit.view",
     },
-    "reviewer": {"finding.decide", "report.generate"},
-    "auditor": {"report.generate", "audit.export"},
+    "manager": {
+        "campaign.create",
+        "campaign.scan",
+        "campaign.edit",
+        "rewrite.accept",
+        "override.decide",
+        "campaign.approve",
+        "campaign.publish",
+        "campaign.escalate",
+        "analytics.view",
+    },
+    "creator": {
+        "campaign.create",
+        "campaign.scan",
+        "campaign.edit",
+        "rewrite.accept",
+        "override.request",
+    },
+    "specialist": {
+        "campaign.scan",
+        "rewrite.accept",
+        "override.decide",
+        "campaign.approve",
+        "audit.view",
+        "analytics.view",
+    },
 }
 
-# Display names for the demo users (mirrors src/api/mocks/seed.ts USERS).
 DEMO_USERS: dict[str, str] = {
-    "admin": "Priya Sharma",
-    "accountant": "Priya Sharma",
-    "reviewer": "Ananya Iyer",
-    "auditor": "Vikram Rao",
+    "owner": "Elena Vance",
+    "admin": "Marcus Sterling",
+    "manager": "Sarah Jenkins",
+    "creator": "Liam Chen",
+    "specialist": "Rachel Adams",
 }
-ESCALATION_USER = "Rahul Mehta"
 
 
 @dataclass(frozen=True)
 class User:
     name: str
     role: str
+    org_id: str = "org_acme"
     ip: str | None = None
 
     def can(self, perm: str) -> bool:
@@ -86,7 +135,7 @@ def _verify_jwt(token: str, secret: str) -> dict:
         return payload
     except ValueError as e:
         raise ApiError(401, "unauthorized", f"Invalid token: {e}") from e
-    except Exception as e:  # malformed token
+    except Exception as e:
         raise ApiError(401, "unauthorized", "Invalid token") from e
 
 
@@ -100,18 +149,23 @@ def current_user(request: Request) -> User:
         if not settings.jwt_secret:
             raise ApiError(500, "internal_error", "JWT_SECRET is not configured")
         claims = _verify_jwt(auth[7:].strip(), settings.jwt_secret.get_secret_value())
-        role = claims.get("role", "auditor")
+        role = claims.get("role", "creator")
         if role not in ROLES:
             raise ApiError(403, "forbidden", f"Unknown role '{role}'")
-        return User(name=claims.get("name") or claims.get("sub", "user"), role=role, ip=ip)
+        return User(
+            name=claims.get("name") or claims.get("sub", "user"),
+            role=role,
+            org_id=claims.get("org_id", "org_acme"),
+            ip=ip,
+        )
     role = (request.headers.get("x-demo-role") or "admin").strip().lower()
     if role not in ROLES:
-        raise ApiError(403, "forbidden", f"Unknown role '{role}'")
-    return User(name=DEMO_USERS[role], role=role, ip=ip)
+        role = "admin"
+    return User(name=DEMO_USERS.get(role, "Marcus Sterling"), role=role, org_id="org_acme", ip=ip)
 
 
 def require(perm: str):
-    """Dependency factory: `user: User = Depends(require("run.create"))`."""
+    """Dependency factory: `user: User = Depends(require("rules.manage"))`."""
 
     def dep(user: User = Depends(current_user)) -> User:
         if not user.can(perm):

@@ -1,4 +1,4 @@
-"""Runtime configuration. Loaded only from the environment (and backend/.env) via pydantic-settings."""
+"""Runtime configuration for VeriBrand AI."""
 
 from functools import lru_cache
 from pathlib import Path
@@ -12,20 +12,25 @@ BACKEND_DIR = Path(__file__).resolve().parents[2]
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=BACKEND_DIR / ".env", env_file_encoding="utf-8", extra="ignore")
 
-    # SecretStr keeps the key out of repr()/logs; read it only via get_secret_value() in the agent client.
+    # SecretStr keeps the key out of repr()/logs
     gemini_api_key: SecretStr | None = None
-    database_url: str = "sqlite:///./reconai.db"
-    cors_origins: str = "http://localhost:5173"
+    ai_model: str = "gemini-2.5-flash"
+    database_url: str = "sqlite:///./veribrand.db"
+    cors_origins: str = "http://localhost:5173,http://localhost:8080"
     auth_mode: str = Field(default="demo", pattern="^(demo|jwt)$")
     public_base_url: str = "http://localhost:8000"
     data_dir: Path = BACKEND_DIR / "data"
-    # JWT mode (see README): HS256 secret used to verify bearer tokens.
     jwt_secret: SecretStr | None = None
-    # Test hook: run the pipeline inline instead of as a background task.
-    inline_jobs: bool = False
-    # Per-item AI timeout and global switch (the app works fully offline when AI is unavailable).
-    ai_timeout_s: float = 45.0
-    ai_concurrency: int = 2
+
+    # Brand Readiness Score default penalty weights
+    factual_weight: float = 25.0
+    visual_weight: float = 12.0
+    tone_weight: float = 5.0
+
+    # Governance thresholds
+    fast_track_threshold: float = 95.0
+    friction_override_threshold: float = 0.25  # 25% override triggers friction alert
+    friction_min_occurrences: int = 3
 
     @property
     def cors_origin_list(self) -> list[str]:

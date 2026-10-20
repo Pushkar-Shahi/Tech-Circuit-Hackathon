@@ -1,14 +1,15 @@
 import { NavLink } from "react-router-dom";
 import {
-  FileBarChart2,
+  Brain,
+  FileCheck2,
   Inbox,
   LayoutDashboard,
+  LineChart,
+  Palette,
   PanelLeftClose,
   PanelLeftOpen,
-  Play,
-  ScrollText,
   Settings,
-  SlidersHorizontal,
+  ShieldCheck,
   type LucideIcon,
 } from "lucide-react";
 import { useReviewQueue } from "@/api/queries";
@@ -29,32 +30,50 @@ interface NavItem {
 
 export const NAV: NavItem[] = [
   { to: "/", label: "Dashboard", icon: LayoutDashboard, end: true },
-  { to: "/runs", label: "Runs", icon: Play },
-  { to: "/review", label: "Review Queue", icon: Inbox, badge: "review" },
-  { to: "/rules", label: "Rules", icon: SlidersHorizontal },
-  { to: "/reports", label: "Reports", icon: FileBarChart2 },
-  { to: "/audit", label: "Audit Log", icon: ScrollText },
+  { to: "/campaigns", label: "Campaigns & Audits", icon: FileCheck2 },
+  { to: "/queue", label: "Review Queue", icon: Inbox, badge: "review" },
+  { to: "/brain", label: "Brand Brain", icon: Brain },
+  { to: "/brands", label: "Brand Identities", icon: Palette },
+  { to: "/analytics", label: "Governance Analytics", icon: LineChart },
+  { to: "/audit", label: "Audit Trail", icon: ShieldCheck },
   { to: "/settings", label: "Settings", icon: Settings },
 ];
 
 function usePendingCount() {
   const { data } = useReviewQueue();
-  return data?.filter((i) => ["open", "in_review", "escalated"].includes(i.finding.status)).length;
+  return data?.queueCount ?? 0;
 }
 
 export function Logo({ collapsed }: { collapsed?: boolean }) {
   return (
     <div className="flex items-center gap-2.5">
-      <div className="relative flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-sys/30 bg-sys/10">
-        <svg viewBox="0 0 24 24" className="h-4 w-4" aria-hidden>
-          <path d="M4 8h8M4 12h14M4 16h8" stroke="rgb(var(--sys))" strokeWidth="2.2" strokeLinecap="round" />
-          <circle cx="18" cy="8" r="2.4" fill="rgb(var(--ai))" />
+      <div className="relative flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-sys/40 bg-sys/10 shadow-sm shadow-sys/20">
+        <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" aria-hidden>
+          <path
+            d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"
+            stroke="rgb(var(--sys))"
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          />
+          <path
+            d="M9 12l2 2 4-4"
+            stroke="rgb(var(--ai))"
+            strokeWidth="2.2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          />
         </svg>
       </div>
       {!collapsed && (
         <div className="leading-tight">
-          <div className="text-sm font-semibold tracking-tight">ReconAI</div>
-          <div className="text-2xs text-muted-foreground">Reconciliation agent</div>
+          <div className="flex items-center gap-1.5 text-sm font-semibold tracking-tight">
+            <span>VeriBrand</span>
+            <span className="rounded bg-ai/20 px-1 py-0.2 text-[10px] font-bold uppercase tracking-wider text-ai">
+              AI
+            </span>
+          </div>
+          <div className="text-2xs text-muted-foreground">Governance Platform</div>
         </div>
       )}
     </div>
@@ -77,17 +96,18 @@ function NavList({ collapsed, onNavigate }: { collapsed?: boolean; onNavigate?: 
             className={({ isActive }) =>
               cn(
                 "group relative flex h-9 items-center gap-3 rounded-md px-2.5 text-sm font-medium text-muted-foreground transition-colors hover:bg-surface-2 hover:text-foreground",
-                isActive && "bg-surface-2 text-foreground before:absolute before:-left-3 before:top-2 before:h-5 before:w-0.5 before:rounded-full before:bg-sys",
+                isActive &&
+                  "bg-surface-2 text-foreground font-semibold before:absolute before:-left-3 before:top-2 before:h-5 before:w-0.5 before:rounded-full before:bg-sys",
                 collapsed && "justify-center px-0",
               )
             }
           >
             <Icon className="h-4 w-4 shrink-0" aria-hidden />
             {!collapsed && <span className="flex-1 truncate">{item.label}</span>}
-            {count ? (
+            {count && count > 0 ? (
               <span
                 className={cn(
-                  "num rounded-full bg-attn/15 px-1.5 text-2xs font-semibold text-attn",
+                  "num rounded-full bg-attn/20 px-1.5 text-2xs font-bold text-attn",
                   collapsed && "absolute -right-0.5 -top-0.5 px-1 text-[9px]",
                 )}
                 aria-label={`${count} pending reviews`}

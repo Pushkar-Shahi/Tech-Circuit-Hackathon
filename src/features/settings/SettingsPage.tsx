@@ -1,453 +1,653 @@
-import * as React from "react";
-import { Controller, useFieldArray, useForm } from "react-hook-form";
-import { zodResolver } from "@hookform/resolvers/zod";
-import { z } from "zod";
-import { Bell, Building2, Check, Code2, Loader2, Lock, Minus, Plus, Shield, Sparkles, SlidersHorizontal, Trash2, Users } from "lucide-react";
+import { useState } from "react";
+import {
+  Brain,
+  Check,
+  CheckCircle2,
+  Eye,
+  Lock,
+  Moon,
+  Palette,
+  RotateCcw,
+  Save,
+  Scale,
+  Settings,
+  ShieldAlert,
+  Sparkles,
+  Sun,
+  Users,
+  Zap,
+} from "lucide-react";
 import { toast } from "sonner";
-import type { Settings } from "@/api/types";
-import { useSettings, useUpdateSettings } from "@/api/queries";
 import { Button } from "@/components/ui/button";
-import { FieldError, Input, Label, Slider, Switch } from "@/components/ui/form-controls";
-import { Segmented, Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/menus";
-import { AmountCell } from "@/components/shared/AmountCell";
-import { AIBadge } from "@/components/shared/badges";
-import { Can, ErrorState, PageHeader, SkeletonRows } from "@/components/shared/misc";
-import { useUrlParam } from "@/hooks/useUrlState";
-import { useUiStore, type Density, type Theme } from "@/lib/store";
-import { PERMISSIONS, ROLES, roleCan, useCan, type Permission, type Role } from "@/lib/permissions";
-import { fmtDate } from "@/lib/format";
-import type { CurrencyCode, MoneyLocale } from "@/lib/money";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { useUiStore } from "@/lib/store";
+import { ROLES } from "@/lib/permissions";
 import { cn } from "@/lib/utils";
 
+interface GovernanceConfig {
+  penaltyFactual: number;
+  penaltyVisual: number;
+  penaltyTone: number;
+  fastTrackMinScore: number;
+  fastTrackStrictBlockers: boolean;
+  frictionThresholdPct: number;
+  minAuditsForFriction: number;
+  aiProvider: "gemini" | "mock";
+  geminiModel: string;
+  visionDeltaETolerance: number;
+  minContrastRatio: number;
+  logoSafeZonePaddingPct: number;
+}
+
+const DEFAULT_CONFIG: GovernanceConfig = {
+  penaltyFactual: 25,
+  penaltyVisual: 12,
+  penaltyTone: 5,
+  fastTrackMinScore: 95,
+  fastTrackStrictBlockers: true,
+  frictionThresholdPct: 25,
+  minAuditsForFriction: 5,
+  aiProvider: "gemini",
+  geminiModel: "gemini-2.5-flash",
+  visionDeltaETolerance: 15,
+  minContrastRatio: 4.5,
+  logoSafeZonePaddingPct: 10,
+};
+
 const SECTIONS = [
-  { id: "preferences", label: "Profile & preferences", icon: SlidersHorizontal },
-  { id: "organization", label: "Organization", icon: Building2 },
-  { id: "ai", label: "AI & privacy", icon: Sparkles },
-  { id: "roles", label: "Roles & permissions", icon: Users },
-  { id: "notifications", label: "Notifications", icon: Bell },
-  { id: "developer", label: "Developer", icon: Code2 },
+  { id: "scoring", label: "Scoring & Fast-Track", icon: Scale },
+  { id: "friction", label: "Friction Detection", icon: ShieldAlert },
+  { id: "ai", label: "AI & Vision Engines", icon: Brain },
+  { id: "roles", label: "RBAC & Permissions", icon: Users },
+  { id: "appearance", label: "Preferences", icon: Settings },
 ] as const;
 
-function SectionCard({ title, description, children, footer }: { title: string; description?: string; children: React.ReactNode; footer?: React.ReactNode }) {
-  return (
-    <section className="card" aria-labelledby={`s-${title}`}>
-      <div className="border-b px-5 py-3.5">
-        <h2 id={`s-${title}`} className="text-sm font-semibold">{title}</h2>
-        {description && <p className="mt-0.5 text-xs text-muted-foreground">{description}</p>}
-      </div>
-      <div className="space-y-5 p-5">{children}</div>
-      {footer && <div className="flex items-center justify-end gap-2 border-t px-5 py-3">{footer}</div>}
-    </section>
-  );
-}
-
-function Row({ label, help, children, htmlFor }: { label: string; help?: string; children: React.ReactNode; htmlFor?: string }) {
-  return (
-    <div className="grid gap-2 sm:grid-cols-[220px_1fr] sm:items-center">
-      <div>
-        <Label htmlFor={htmlFor} className="text-sm">{label}</Label>
-        {help && <p className="text-2xs text-muted-foreground">{help}</p>}
-      </div>
-      <div className="min-w-0">{children}</div>
-    </div>
-  );
-}
-
-function ReadOnlyNotice({ perm }: { perm: Permission }) {
-  const can = useCan(perm);
-  if (can) return null;
-  return (
-    <p className="flex items-center gap-1.5 rounded-md border border-warn/30 bg-warn/5 px-3 py-2 text-xs text-warn" role="status">
-      <Lock className="h-3.5 w-3.5" /> Read-only — only Admins can change this section.
-    </p>
-  );
-}
-
-/* ---------------- Preferences ---------------- */
-function Preferences() {
-  const s = useUiStore();
-  return (
-    <SectionCard title="Profile & preferences" description="Stored on this device. Applies immediately.">
-      <Row label="Name"><p className="text-sm">Priya Sharma · priya.sharma@acme.in</p></Row>
-      <Row label="Theme">
-        <Segmented<Theme> label="Theme" value={s.theme} onChange={(v) => s.set({ theme: v })} options={[{ value: "dark", label: "Dark" }, { value: "light", label: "Light" }, { value: "system", label: "System" }]} />
-      </Row>
-      <Row label="Table density" help="Row height in data tables.">
-        <Segmented<Density> label="Density" value={s.density} onChange={(v) => s.set({ density: v })} options={[{ value: "comfortable", label: "Comfortable" }, { value: "compact", label: "Compact" }]} />
-      </Row>
-      <Row label="Number format" htmlFor="locale" help="Digit grouping for amounts.">
-        <Select value={s.locale} onValueChange={(v) => s.set({ locale: v as MoneyLocale })}>
-          <SelectTrigger id="locale" className="w-64"><SelectValue /></SelectTrigger>
-          <SelectContent>
-            <SelectItem value="en-IN">Indian (12,34,567.89)</SelectItem>
-            <SelectItem value="en-US">International (1,234,567.89)</SelectItem>
-          </SelectContent>
-        </Select>
-      </Row>
-      <Row label="Currency" htmlFor="currency">
-        <Select value={s.currency} onValueChange={(v) => s.set({ currency: v as CurrencyCode })}>
-          <SelectTrigger id="currency" className="w-64"><SelectValue /></SelectTrigger>
-          <SelectContent>
-            <SelectItem value="INR">₹ Indian Rupee (INR)</SelectItem>
-            <SelectItem value="USD">$ US Dollar (USD)</SelectItem>
-            <SelectItem value="EUR">€ Euro (EUR)</SelectItem>
-            <SelectItem value="GBP">£ Pound Sterling (GBP)</SelectItem>
-          </SelectContent>
-        </Select>
-      </Row>
-      <Row label="Date format" htmlFor="datefmt">
-        <Select value={s.dateFormat} onValueChange={(v) => s.set({ dateFormat: v })}>
-          <SelectTrigger id="datefmt" className="w-64"><SelectValue /></SelectTrigger>
-          <SelectContent>
-            {["dd MMM yyyy", "dd/MM/yyyy", "yyyy-MM-dd", "MMM d, yyyy"].map((f) => (
-              <SelectItem key={f} value={f}>{fmtDate("2026-09-30", f)}</SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-      </Row>
-      <Row label="Preview">
-        <div className="flex flex-wrap items-center gap-4 rounded-md border bg-background px-3 py-2 text-sm">
-          <span className="num">{fmtDate("2026-09-30")}</span>
-          <AmountCell value="-124500.00" />
-          <AmountCell value="1240880.5" />
-          <AmountCell value="98765432.10" colorize={false} />
-        </div>
-      </Row>
-    </SectionCard>
-  );
-}
-
-/* ---------------- Organization ---------------- */
-const money = z.string().regex(/^\d+(\.\d{1,2})?$/, "Enter an amount like 50000 or 50000.00");
-const orgSchema = z
-  .object({
-    name: z.string().min(2, "Required"),
-    approvalLimit: money,
-    highValueThreshold: money,
-    connectorType: z.enum(["csv", "api"]),
-    provider: z.string().min(1),
-    accounts: z.array(
-      z.object({
-        id: z.string(),
-        name: z.string().min(2, "Required"),
-        bank: z.string().min(2, "Required"),
-        last4: z.string().regex(/^\d{4}$/, "4 digits"),
-        parserTemplate: z.string().min(1, "Required"),
-        currency: z.string(),
-      }),
-    ),
-  })
-  .refine((v) => Number(v.approvalLimit) <= Number(v.highValueThreshold), { path: ["approvalLimit"], message: "Should not exceed the high-value threshold" });
-type OrgValues = z.infer<typeof orgSchema>;
-
-function Organization({ settings }: { settings: Settings }) {
-  const save = useUpdateSettings();
-  const can = useCan("settings.org");
-  const o = settings.organization;
-  const form = useForm<OrgValues>({
-    resolver: zodResolver(orgSchema),
-    defaultValues: { name: o.name, approvalLimit: o.approvalLimit, highValueThreshold: o.highValueThreshold, connectorType: o.connector.type, provider: o.connector.provider, accounts: o.accounts },
-  });
-  const accounts = useFieldArray({ control: form.control, name: "accounts" });
-  const errs = form.formState.errors;
-  const submit = form.handleSubmit((v) =>
-    save.mutate({
-      organization: { name: v.name, approvalLimit: v.approvalLimit, highValueThreshold: v.highValueThreshold, accounts: v.accounts, connector: { type: v.connectorType, provider: v.provider, status: "connected" } },
-    }),
-  );
-  return (
-    <form onSubmit={submit} noValidate>
-      <SectionCard
-        title="Organization"
-        description="Bank accounts, accounting connector and approval thresholds used by detectors."
-        footer={
-          <Can perm="settings.org">
-            <Button type="submit" disabled={save.isPending || !form.formState.isDirty}>{save.isPending && <Loader2 className="animate-spin" />} Save changes</Button>
-          </Can>
-        }
-      >
-        <ReadOnlyNotice perm="settings.org" />
-        <fieldset disabled={!can} className="space-y-5">
-          <Row label="Organization name" htmlFor="org-name">
-            <Input id="org-name" {...form.register("name")} aria-invalid={!!errs.name} />
-            <FieldError message={errs.name?.message} />
-          </Row>
-          <Row label="Approval limit" help="Payments just below this are flagged." htmlFor="org-al">
-            <div className="relative w-48"><span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-xs text-muted-foreground">₹</span><Input id="org-al" className="num pl-6" {...form.register("approvalLimit")} aria-invalid={!!errs.approvalLimit} /></div>
-            <FieldError message={errs.approvalLimit?.message} />
-          </Row>
-          <Row label="High-value threshold" help="Always routed to human review." htmlFor="org-hv">
-            <div className="relative w-48"><span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-xs text-muted-foreground">₹</span><Input id="org-hv" className="num pl-6" {...form.register("highValueThreshold")} aria-invalid={!!errs.highValueThreshold} /></div>
-            <FieldError message={errs.highValueThreshold?.message} />
-          </Row>
-          <Row label="Accounting connector">
-            <div className="flex flex-wrap items-center gap-2">
-              <Controller control={form.control} name="connectorType" render={({ field }) => <Segmented label="Connector type" value={field.value} onChange={(v) => field.onChange(v)} options={[{ value: "csv", label: "CSV upload" }, { value: "api", label: "API" }]} />} />
-              <Controller
-                control={form.control}
-                name="provider"
-                render={({ field }) => (
-                  <Select value={field.value} onValueChange={field.onChange}>
-                    <SelectTrigger className="w-56" aria-label="Accounting system"><SelectValue /></SelectTrigger>
-                    <SelectContent>
-                      {["Tally Prime", "Zoho Books", "QuickBooks Online", "Oracle NetSuite", "SAP Business One"].map((p) => <SelectItem key={p} value={p}>{p}</SelectItem>)}
-                    </SelectContent>
-                  </Select>
-                )}
-              />
-              <span className="flex items-center gap-1 text-xs text-ok"><Check className="h-3.5 w-3.5" /> {o.connector.status}</span>
-            </div>
-          </Row>
-          <div>
-            <div className="mb-2 flex items-center justify-between">
-              <h3 className="text-sm font-medium">Bank accounts</h3>
-              <Button size="xs" variant="secondary" onClick={() => accounts.append({ id: `acc_${Date.now().toString(36)}`, name: "", bank: "", last4: "", parserTemplate: "Generic CSV", currency: "INR" })}>
-                <Plus /> Add account
-              </Button>
-            </div>
-            <div className="overflow-x-auto rounded-md border">
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="text-left text-2xs uppercase tracking-wider text-muted-foreground">
-                    <th scope="col" className="px-3 py-2 font-semibold">Account name</th>
-                    <th scope="col" className="px-3 py-2 font-semibold">Bank</th>
-                    <th scope="col" className="px-3 py-2 font-semibold">Last 4</th>
-                    <th scope="col" className="px-3 py-2 font-semibold">Parser template</th>
-                    <th scope="col" className="w-10 px-3 py-2"><span className="sr-only">Remove</span></th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {accounts.fields.map((a, i) => (
-                    <tr key={a.id} className="border-t align-top">
-                      <td className="px-3 py-1.5"><Input aria-label="Account name" className="h-8 text-xs" {...form.register(`accounts.${i}.name`)} aria-invalid={!!errs.accounts?.[i]?.name} /></td>
-                      <td className="px-3 py-1.5"><Input aria-label="Bank" className="h-8 text-xs" {...form.register(`accounts.${i}.bank`)} aria-invalid={!!errs.accounts?.[i]?.bank} /></td>
-                      <td className="px-3 py-1.5"><Input aria-label="Last 4 digits" className="num h-8 w-20 text-xs" maxLength={4} {...form.register(`accounts.${i}.last4`)} aria-invalid={!!errs.accounts?.[i]?.last4} /><FieldError message={errs.accounts?.[i]?.last4?.message} /></td>
-                      <td className="px-3 py-1.5">
-                        <Controller
-                          control={form.control}
-                          name={`accounts.${i}.parserTemplate`}
-                          render={({ field }) => (
-                            <Select value={field.value} onValueChange={field.onChange}>
-                              <SelectTrigger className="h-8 text-xs" aria-label="Parser template"><SelectValue /></SelectTrigger>
-                              <SelectContent>
-                                {["HDFC PDF v3", "ICICI CSV (iBizz)", "SBI PDF", "Kotak CSV", "Axis PDF", "Generic CSV"].map((p) => <SelectItem key={p} value={p}>{p}</SelectItem>)}
-                              </SelectContent>
-                            </Select>
-                          )}
-                        />
-                      </td>
-                      <td className="px-3 py-1.5"><Button variant="ghost" size="icon-sm" aria-label={`Remove account ${i + 1}`} onClick={() => accounts.remove(i)}><Trash2 /></Button></td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </div>
-        </fieldset>
-      </SectionCard>
-    </form>
-  );
-}
-
-/* ---------------- AI & privacy ---------------- */
-function AiPrivacy({ settings }: { settings: Settings }) {
-  const save = useUpdateSettings();
-  const can = useCan("settings.ai");
-  const [ai, setAi] = React.useState(settings.ai);
-  React.useEffect(() => setAi(settings.ai), [settings.ai]);
-  const dirty = JSON.stringify(ai) !== JSON.stringify(settings.ai);
-  return (
-    <SectionCard
-      title="AI & privacy"
-      description="Controls what the investigation agent sees. Matching and detectors never use the AI."
-      footer={<Can perm="settings.ai"><Button disabled={!dirty || save.isPending} onClick={() => save.mutate({ ai })}>{save.isPending && <Loader2 className="animate-spin" />} Save changes</Button></Can>}
-    >
-      <ReadOnlyNotice perm="settings.ai" />
-      <fieldset disabled={!can} className="space-y-5">
-        <Row label="Send data to AI" help="Master switch for the investigation agent.">
-          <div className="flex items-center gap-3">
-            <Switch checked={ai.sendDataToAi} onCheckedChange={(v) => setAi({ ...ai, sendDataToAi: v })} aria-label="Send data to AI" />
-            {!ai.sendDataToAi && <span className="text-xs text-warn">AI investigation off — every unmatched item goes to human review without an explanation.</span>}
-          </div>
-        </Row>
-        <Row label="Provider"><span className="flex items-center gap-2 text-sm">Google Gemini <AIBadge label="via LangGraph" /></span></Row>
-        <Row label="Default model" htmlFor="ai-model" help="Used for all investigations.">
-          <Select value={ai.defaultModel} onValueChange={(v) => setAi({ ...ai, defaultModel: v })}>
-            <SelectTrigger id="ai-model" className="w-64"><SelectValue /></SelectTrigger>
-            <SelectContent>
-              <SelectItem value="gemini-2.5-flash">Gemini Flash (default, fast)</SelectItem>
-              <SelectItem value="gemini-2.5-flash-lite">Gemini Flash-Lite (cheapest)</SelectItem>
-              <SelectItem value="gemini-2.5-pro">Gemini Pro (most capable)</SelectItem>
-            </SelectContent>
-          </Select>
-        </Row>
-        <Row label="High-value escalation model" htmlFor="ai-esc" help="Potential fraud and high-value items are re-investigated with this model.">
-          <Select value={ai.escalationModel} onValueChange={(v) => setAi({ ...ai, escalationModel: v })}>
-            <SelectTrigger id="ai-esc" className="w-64"><SelectValue /></SelectTrigger>
-            <SelectContent>
-              <SelectItem value="gemini-2.5-pro">Gemini Pro</SelectItem>
-              <SelectItem value="gemini-2.5-flash">Gemini Flash (no escalation)</SelectItem>
-            </SelectContent>
-          </Select>
-        </Row>
-        <Row label="Mask account numbers" help="Replaced with ••last4 before any AI call.">
-          <Switch checked={ai.maskAccountNumbers} onCheckedChange={(v) => setAi({ ...ai, maskAccountNumbers: v })} aria-label="Mask account numbers" />
-        </Row>
-        <Row label="Mask personal names" help="Individuals in narrations (e.g. IMPS to a person) become PERSON_1, PERSON_2…">
-          <Switch checked={ai.maskPersonalNames} onCheckedChange={(v) => setAi({ ...ai, maskPersonalNames: v })} aria-label="Mask personal names" />
-        </Row>
-        <Row label="Retention">
-          <p className="text-sm text-muted-foreground">Prompts and responses are retained for <span className="num text-foreground">{ai.retentionDays}</span> days for audit, then deleted. The provider does not train on your data.</p>
-        </Row>
-        <Row label="Estimated cost per run"><span className="flex items-center gap-2"><AmountCell value={ai.estCostPerRun} colorize={false} className="text-sm font-semibold" /> <span className="text-xs text-muted-foreground">at ~35 investigated items</span></span></Row>
-      </fieldset>
-    </SectionCard>
-  );
-}
-
-/* ---------------- Roles ---------------- */
-function RolesMatrix() {
-  const role = useUiStore((s) => s.role);
-  const set = useUiStore((s) => s.set);
-  return (
-    <SectionCard title="Roles & permissions" description="The UI hides or disables controls based on the current role. Use the dev role switcher to try each one.">
-      <div className="flex flex-wrap items-center gap-3 rounded-md border border-dashed px-3 py-2">
-        <span className="flex items-center gap-1.5 text-xs font-medium"><Code2 className="h-3.5 w-3.5" /> Dev mode · current role</span>
-        <Segmented<Role> label="Current role" value={role} onChange={(v) => { set({ role: v }); toast.info(`Now acting as ${ROLES.find((r) => r.id === v)?.label}`); }} options={ROLES.map((r) => ({ value: r.id, label: r.label }))} />
-      </div>
-      <div className="overflow-x-auto">
-        <table className="w-full text-sm">
-          <caption className="sr-only">Permissions by role</caption>
-          <thead>
-            <tr>
-              <th scope="col" className="px-3 py-2 text-left text-2xs font-semibold uppercase tracking-wider text-muted-foreground">Permission</th>
-              {ROLES.map((r) => (
-                <th key={r.id} scope="col" className={cn("px-3 py-2 text-center text-xs font-semibold", r.id === role && "bg-sys/10 text-sys")}>
-                  {r.label}
-                  {r.id === role && <span className="block text-[10px] font-normal">(you)</span>}
-                </th>
-              ))}
-            </tr>
-          </thead>
-          <tbody>
-            {(Object.entries(PERMISSIONS) as [Permission, string][]).map(([p, label]) => (
-              <tr key={p} className="border-t border-border/60">
-                <th scope="row" className="px-3 py-1.5 text-left font-normal">{label}</th>
-                {ROLES.map((r) => {
-                  const ok = roleCan(r.id, p);
-                  return (
-                    <td key={r.id} className={cn("px-3 py-1.5 text-center", r.id === role && "bg-sys/5")}>
-                      {ok ? <Check className="mx-auto h-4 w-4 text-ok" aria-label="Allowed" /> : <Minus className="mx-auto h-4 w-4 text-muted-foreground/50" aria-label="Not allowed" />}
-                    </td>
-                  );
-                })}
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-      <p className="flex items-center gap-1.5 text-xs text-muted-foreground"><Shield className="h-3.5 w-3.5" /> The mock API enforces the same matrix (403) via the X-Demo-Role header; a real backend should use the session's role.</p>
-    </SectionCard>
-  );
-}
-
-/* ---------------- Notifications ---------------- */
-function Notifications({ settings }: { settings: Settings }) {
-  const save = useUpdateSettings();
-  const [n, setN] = React.useState(settings.notifications);
-  React.useEffect(() => setN(settings.notifications), [settings.notifications]);
-  const dirty = JSON.stringify(n) !== JSON.stringify(settings.notifications);
-  return (
-    <SectionCard title="Notifications" description="When a run finishes, when something is assigned to you, and when a potential-fraud item appears." footer={<Button disabled={!dirty || save.isPending} onClick={() => save.mutate({ notifications: n })}>{save.isPending && <Loader2 className="animate-spin" />} Save changes</Button>}>
-      <Row label="Email"><Switch checked={n.email} onCheckedChange={(v) => setN({ ...n, email: v })} aria-label="Email notifications" /></Row>
-      <Row label="Slack"><Switch checked={n.slack} onCheckedChange={(v) => setN({ ...n, slack: v })} aria-label="Slack notifications" /></Row>
-      {n.slack && (
-        <Row label="Slack channel" htmlFor="slack-ch">
-          <Input id="slack-ch" className="w-64" value={n.slackChannel} onChange={(e) => setN({ ...n, slackChannel: e.target.value })} />
-        </Row>
-      )}
-      <Row label="Digest">
-        <Segmented label="Digest frequency" value={n.digest} onChange={(v) => setN({ ...n, digest: v })} options={[{ value: "realtime", label: "Real-time" }, { value: "daily", label: "Daily digest" }]} />
-      </Row>
-      <p className="text-xs text-muted-foreground">Potential-fraud alerts are always sent immediately, regardless of digest setting.</p>
-    </SectionCard>
-  );
-}
-
-/* ---------------- Developer ---------------- */
-function Developer() {
-  const read = () => {
-    try {
-      return { minLatency: 200, maxLatency: 800, errorRate: 0.02, ...JSON.parse(localStorage.getItem("reconai-mock") ?? "{}") };
-    } catch {
-      return { minLatency: 200, maxLatency: 800, errorRate: 0.02 };
-    }
-  };
-  const [cfg, setCfg] = React.useState(read);
-  const update = (patch: Partial<typeof cfg>) => {
-    const next = { ...cfg, ...patch };
-    setCfg(next);
-    localStorage.setItem("reconai-mock", JSON.stringify(next));
-  };
-  return (
-    <SectionCard title="Developer" description="Mock API controls (MSW). Mock data lives in memory and resets when you reload the page.">
-      <Row label={`Latency: ${cfg.minLatency}–${cfg.maxLatency} ms`}>
-        <Slider min={0} max={2000} step={50} value={[cfg.minLatency, cfg.maxLatency]} onValueChange={(v) => update({ minLatency: v[0], maxLatency: v[1] })} thumbLabel="Latency" className="max-w-md" />
-      </Row>
-      <Row label={`Error rate: ${Math.round(cfg.errorRate * 100)}%`} help="Random 503s to exercise retry, rollback and error states.">
-        <Slider min={0} max={0.5} step={0.01} value={[cfg.errorRate]} onValueChange={(v) => update({ errorRate: v[0] })} thumbLabel="Error rate" className="max-w-md" />
-      </Row>
-      <Row label="API base URL"><code className="num text-xs">{import.meta.env.VITE_API_BASE_URL || "(same origin) /api"}</code></Row>
-      <Row label="Mocks enabled"><code className="num text-xs">{import.meta.env.VITE_USE_MOCKS === "false" ? "false — using real backend" : "true"}</code></Row>
-      <div className="flex gap-2">
-        <Button variant="secondary" onClick={() => { localStorage.removeItem("reconai-mock"); setCfg(read()); toast.success("Mock settings reset"); }}>Reset mock settings</Button>
-        <Button variant="secondary" onClick={() => window.location.reload()}>Reset demo data (reload)</Button>
-      </div>
-    </SectionCard>
-  );
-}
+type SectionId = (typeof SECTIONS)[number]["id"];
 
 export default function SettingsPage() {
-  const [section, setSection] = useUrlParam("section", "preferences");
-  const { data, isLoading, error, refetch } = useSettings();
-  const needsServer = section === "organization" || section === "ai" || section === "notifications";
+  const [activeSection, setActiveSection] = useState<SectionId>("scoring");
+  const [config, setConfig] = useState<GovernanceConfig>(() => {
+    const saved = localStorage.getItem("veribrand_governance_config");
+    return saved ? { ...DEFAULT_CONFIG, ...JSON.parse(saved) } : DEFAULT_CONFIG;
+  });
+  const [geminiApiKey, setGeminiApiKey] = useState("AIzaSy••••••••••••••••••••••••••••••");
+  const [showKey, setShowKey] = useState(false);
+  const [isSaved, setIsSaved] = useState(false);
+
+  const currentRole = useUiStore((s) => s.role);
+  const setRole = useUiStore((s) => s.set);
+  const theme = useUiStore((s) => s.theme);
+
+  const handleSave = () => {
+    localStorage.setItem("veribrand_governance_config", JSON.stringify(config));
+    setIsSaved(true);
+    toast.success("Governance configuration saved successfully", {
+      description: "Policy weights, thresholds, and AI parameters have been updated.",
+    });
+    setTimeout(() => setIsSaved(false), 2000);
+  };
+
+  const handleReset = () => {
+    setConfig(DEFAULT_CONFIG);
+    localStorage.removeItem("veribrand_governance_config");
+    toast.info("Restored default enterprise governance settings");
+  };
+
   return (
-    <div>
-      <PageHeader title="Settings" breadcrumbs={[{ label: "Dashboard", to: "/" }, { label: "Settings" }]} />
-      <div className="grid gap-5 md:grid-cols-[220px_1fr]">
-        <nav aria-label="Settings sections">
-          <ul className="flex gap-1 overflow-x-auto md:flex-col">
-            {SECTIONS.map((s) => (
-              <li key={s.id}>
-                <button
-                  type="button"
-                  onClick={() => setSection(s.id)}
-                  aria-current={section === s.id ? "page" : undefined}
-                  className={cn("flex w-full items-center gap-2 whitespace-nowrap rounded-md px-3 py-2 text-left text-sm text-muted-foreground hover:bg-surface-2 hover:text-foreground", section === s.id && "bg-surface-2 font-medium text-foreground")}
-                >
-                  <s.icon className="h-4 w-4" aria-hidden /> {s.label}
-                </button>
-              </li>
-            ))}
-          </ul>
+    <div className="space-y-6">
+      {/* Top Header */}
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between border-b pb-5">
+        <div>
+          <div className="flex items-center gap-2">
+            <h1 className="text-2xl font-bold tracking-tight">Platform Settings & Governance</h1>
+            <span className="rounded-full bg-sys/10 px-2.5 py-0.5 text-xs font-semibold text-sys">
+              Enterprise v2.4
+            </span>
+          </div>
+          <p className="mt-1 text-sm text-muted-foreground">
+            Configure Brand Readiness scoring formulas, fast-track gating, friction detection, and multimodal AI providers.
+          </p>
+        </div>
+        <div className="flex items-center gap-2">
+          <Button variant="outline" size="sm" onClick={handleReset}>
+            <RotateCcw className="mr-1.5 h-3.5 w-3.5" />
+            Reset Defaults
+          </Button>
+          <Button size="sm" onClick={handleSave} className="bg-sys hover:bg-sys/90 text-white">
+            {isSaved ? <Check className="mr-1.5 h-3.5 w-3.5" /> : <Save className="mr-1.5 h-3.5 w-3.5" />}
+            {isSaved ? "Saved" : "Save Changes"}
+          </Button>
+        </div>
+      </div>
+
+      {/* Main Grid: Navigation tabs + Content */}
+      <div className="grid grid-cols-1 md:grid-cols-[220px_1fr] gap-6 items-start">
+        {/* Navigation Sidebar */}
+        <nav className="flex flex-row md:flex-col gap-1 overflow-x-auto pb-2 md:pb-0">
+          {SECTIONS.map((sec) => {
+            const Icon = sec.icon;
+            const isActive = activeSection === sec.id;
+            return (
+              <button
+                key={sec.id}
+                onClick={() => setActiveSection(sec.id)}
+                className={cn(
+                  "flex items-center gap-2.5 rounded-lg px-3 py-2 text-sm font-medium transition-colors text-left whitespace-nowrap",
+                  isActive
+                    ? "bg-surface-2 text-foreground font-semibold shadow-sm border"
+                    : "text-muted-foreground hover:bg-surface-2/60 hover:text-foreground"
+                )}
+              >
+                <Icon className={cn("h-4 w-4 shrink-0", isActive ? "text-sys" : "text-muted-foreground")} />
+                {sec.label}
+              </button>
+            );
+          })}
         </nav>
-        <div className="min-w-0 max-w-4xl">
-          {needsServer && isLoading ? (
-            <div className="card"><SkeletonRows rows={6} cols={2} /></div>
-          ) : needsServer && (error || !data) ? (
-            <ErrorState error={error} onRetry={() => refetch()} />
-          ) : section === "organization" ? (
-            <Organization settings={data!} />
-          ) : section === "ai" ? (
-            <AiPrivacy settings={data!} />
-          ) : section === "roles" ? (
-            <RolesMatrix />
-          ) : section === "notifications" ? (
-            <Notifications settings={data!} />
-          ) : section === "developer" ? (
-            <Developer />
-          ) : (
-            <Preferences />
+
+        {/* Section Contents */}
+        <div className="space-y-6">
+          {/* 1. SCORING & FAST-TRACK */}
+          {activeSection === "scoring" && (
+            <div className="space-y-6">
+              <Card>
+                <CardHeader>
+                  <CardTitle className="text-base flex items-center gap-2">
+                    <Scale className="h-4 w-4 text-sys" />
+                    Brand Readiness Scoring Formula
+                  </CardTitle>
+                  <CardDescription>
+                    Base score starts at 100. Deductions are subtracted per violation based on severity category.
+                    Formula: <code className="bg-surface-2 px-1 py-0.5 rounded text-xs font-mono">max(0, 100 - (Factual × {config.penaltyFactual}) - (Visual × {config.penaltyVisual}) - (Tone × {config.penaltyTone}))</code>
+                  </CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-6">
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                    <div className="rounded-lg border p-4 bg-surface-1">
+                      <div className="flex items-center justify-between">
+                        <span className="text-xs font-semibold text-bad uppercase tracking-wider">Factual / Legal</span>
+                        <span className="text-xs font-bold font-mono text-bad">-{config.penaltyFactual} pts</span>
+                      </div>
+                      <p className="mt-1 text-2xs text-muted-foreground">
+                        Outdated pricing, banned terms, unsupported claims, missing disclaimers.
+                      </p>
+                      <div className="mt-4 flex items-center gap-2">
+                        <input
+                          type="range"
+                          min="10"
+                          max="50"
+                          step="5"
+                          value={config.penaltyFactual}
+                          onChange={(e) => setConfig({ ...config, penaltyFactual: Number(e.target.value) })}
+                          className="w-full accent-red-500"
+                        />
+                        <span className="w-8 text-right font-mono text-xs">{config.penaltyFactual}</span>
+                      </div>
+                    </div>
+
+                    <div className="rounded-lg border p-4 bg-surface-1">
+                      <div className="flex items-center justify-between">
+                        <span className="text-xs font-semibold text-purple-500 uppercase tracking-wider">Visual Assets</span>
+                        <span className="text-xs font-bold font-mono text-purple-500">-{config.penaltyVisual} pts</span>
+                      </div>
+                      <p className="mt-1 text-2xs text-muted-foreground">
+                        Palette mismatch, unapproved fonts, WCAG contrast failure, safe-zone breaches.
+                      </p>
+                      <div className="mt-4 flex items-center gap-2">
+                        <input
+                          type="range"
+                          min="5"
+                          max="30"
+                          step="1"
+                          value={config.penaltyVisual}
+                          onChange={(e) => setConfig({ ...config, penaltyVisual: Number(e.target.value) })}
+                          className="w-full accent-purple-500"
+                        />
+                        <span className="w-8 text-right font-mono text-xs">{config.penaltyVisual}</span>
+                      </div>
+                    </div>
+
+                    <div className="rounded-lg border p-4 bg-surface-1">
+                      <div className="flex items-center justify-between">
+                        <span className="text-xs font-semibold text-amber-500 uppercase tracking-wider">Tone & Voice</span>
+                        <span className="text-xs font-bold font-mono text-amber-500">-{config.penaltyTone} pts</span>
+                      </div>
+                      <p className="mt-1 text-2xs text-muted-foreground">
+                        Formality drift, technical jargon, aggressive language, empathy gaps.
+                      </p>
+                      <div className="mt-4 flex items-center gap-2">
+                        <input
+                          type="range"
+                          min="2"
+                          max="15"
+                          step="1"
+                          value={config.penaltyTone}
+                          onChange={(e) => setConfig({ ...config, penaltyTone: Number(e.target.value) })}
+                          className="w-full accent-amber-500"
+                        />
+                        <span className="w-8 text-right font-mono text-xs">{config.penaltyTone}</span>
+                      </div>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+
+              {/* Fast-Track Auto Approval */}
+              <Card>
+                <CardHeader>
+                  <CardTitle className="text-base flex items-center gap-2">
+                    <Zap className="h-4 w-4 text-emerald-500" />
+                    Fast-Track Governance Policy
+                  </CardTitle>
+                  <CardDescription>
+                    High-scoring campaigns can bypass manual manager review and transition straight to Approved.
+                  </CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  <div className="flex items-start justify-between gap-4 rounded-lg border p-4">
+                    <div>
+                      <div className="text-sm font-semibold">Minimum Score Threshold</div>
+                      <p className="text-xs text-muted-foreground">
+                        Drafts achieving this readiness score or higher are eligible for instant approval.
+                      </p>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <input
+                        type="number"
+                        min="80"
+                        max="100"
+                        value={config.fastTrackMinScore}
+                        onChange={(e) => setConfig({ ...config, fastTrackMinScore: Number(e.target.value) })}
+                        className="w-16 rounded border bg-background px-2 py-1 text-center font-mono text-sm"
+                      />
+                      <span className="text-xs text-muted-foreground">/ 100</span>
+                    </div>
+                  </div>
+
+                  <div className="flex items-start justify-between gap-4 rounded-lg border p-4">
+                    <div>
+                      <div className="flex items-center gap-2 text-sm font-semibold">
+                        <Lock className="h-3.5 w-3.5 text-bad" />
+                        Strict Legal & Factual Blocker Rule
+                      </div>
+                      <p className="text-xs text-muted-foreground">
+                        <strong>Mandatory Safety Guarantee:</strong> Never allow fast-track approval if even a single
+                        critical factual or legal violation exists, regardless of overall numerical score.
+                      </p>
+                    </div>
+                    <input
+                      type="checkbox"
+                      checked={config.fastTrackStrictBlockers}
+                      onChange={(e) => setConfig({ ...config, fastTrackStrictBlockers: e.target.checked })}
+                      className="h-4 w-4 rounded border-muted accent-sys cursor-pointer mt-1"
+                    />
+                  </div>
+                </CardContent>
+              </Card>
+            </div>
+          )}
+
+          {/* 2. FRICTION DETECTION */}
+          {activeSection === "friction" && (
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-base flex items-center gap-2">
+                  <ShieldAlert className="h-4 w-4 text-amber-500" />
+                  Rule Friction Detector Policy
+                </CardTitle>
+                <CardDescription>
+                  Automatically flag brand guidelines with unusually high manager-approved override rates.
+                  These rules may be outdated, overly restrictive, or poorly communicated to creators.
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-6">
+                <div className="space-y-4">
+                  <div className="flex items-start justify-between gap-4 rounded-lg border p-4">
+                    <div>
+                      <div className="text-sm font-semibold">Override Rate Friction Threshold</div>
+                      <p className="text-xs text-muted-foreground">
+                        If manager-approved overrides exceed this percentage of total violations for a rule, trigger a
+                        governance friction alert.
+                      </p>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <input
+                        type="number"
+                        min="10"
+                        max="50"
+                        step="5"
+                        value={config.frictionThresholdPct}
+                        onChange={(e) => setConfig({ ...config, frictionThresholdPct: Number(e.target.value) })}
+                        className="w-16 rounded border bg-background px-2 py-1 text-center font-mono text-sm"
+                      />
+                      <span className="text-xs text-muted-foreground">%</span>
+                    </div>
+                  </div>
+
+                  <div className="flex items-start justify-between gap-4 rounded-lg border p-4">
+                    <div>
+                      <div className="text-sm font-semibold">Minimum Evidence Sample Size</div>
+                      <p className="text-xs text-muted-foreground">
+                        Requires at least this many audit evaluations before flagging a guideline, preventing false
+                        alarms on small sample sizes.
+                      </p>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <input
+                        type="number"
+                        min="3"
+                        max="20"
+                        value={config.minAuditsForFriction}
+                        onChange={(e) => setConfig({ ...config, minAuditsForFriction: Number(e.target.value) })}
+                        className="w-16 rounded border bg-background px-2 py-1 text-center font-mono text-sm"
+                      />
+                      <span className="text-xs text-muted-foreground">evals</span>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="rounded-lg border border-amber-500/20 bg-amber-500/5 p-4 text-xs text-muted-foreground">
+                  <div className="flex items-center gap-2 font-semibold text-foreground">
+                    <Sparkles className="h-4 w-4 text-amber-500" />
+                    Actionable Brand Admin Recommendations
+                  </div>
+                  <p className="mt-1">
+                    When friction is detected, the engine formulates contextual recommendations (e.g. &ldquo;Consider
+                    updating RULE-FACT-02 to exempt customer case studies&rdquo; or &ldquo;Relax contrast minimums on
+                    secondary CTA pills&rdquo;) directly in the Governance Analytics tab.
+                  </p>
+                </div>
+              </CardContent>
+            </Card>
+          )}
+
+          {/* 3. AI & VISION ENGINES */}
+          {activeSection === "ai" && (
+            <div className="space-y-6">
+              <Card>
+                <CardHeader>
+                  <CardTitle className="text-base flex items-center gap-2">
+                    <Brain className="h-4 w-4 text-sys" />
+                    AI Provider & LLM Configuration
+                  </CardTitle>
+                  <CardDescription>
+                    Configure Gemini LLM connectivity for deep semantic tone audits, contextual rewrites, and RAG vector searches.
+                  </CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <button
+                      type="button"
+                      onClick={() => setConfig({ ...config, aiProvider: "gemini" })}
+                      className={cn(
+                        "rounded-lg border p-4 text-left transition-all",
+                        config.aiProvider === "gemini"
+                          ? "border-sys bg-sys/5 ring-1 ring-sys"
+                          : "hover:bg-surface-2"
+                      )}
+                    >
+                      <div className="flex items-center justify-between">
+                        <span className="text-sm font-semibold">Google Gemini (Active)</span>
+                        {config.aiProvider === "gemini" && <CheckCircle2 className="h-4 w-4 text-sys" />}
+                      </div>
+                      <p className="mt-1 text-xs text-muted-foreground">
+                        Production multi-turn structured reasoning with Gemini 2.5 Flash / Pro.
+                      </p>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => setConfig({ ...config, aiProvider: "mock" })}
+                      className={cn(
+                        "rounded-lg border p-4 text-left transition-all",
+                        config.aiProvider === "mock"
+                          ? "border-sys bg-sys/5 ring-1 ring-sys"
+                          : "hover:bg-surface-2"
+                      )}
+                    >
+                      <div className="flex items-center justify-between">
+                        <span className="text-sm font-semibold">Offline Fallback Engine</span>
+                        {config.aiProvider === "mock" && <CheckCircle2 className="h-4 w-4 text-sys" />}
+                      </div>
+                      <p className="mt-1 text-xs text-muted-foreground">
+                        Deterministic rubric analyzer for isolated or zero-network local development.
+                      </p>
+                    </button>
+                  </div>
+
+                  <div className="space-y-2 pt-2">
+                    <label className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                      Gemini API Key
+                    </label>
+                    <div className="flex items-center gap-2">
+                      <div className="relative flex-1">
+                        <input
+                          type={showKey ? "text" : "password"}
+                          value={geminiApiKey}
+                          onChange={(e) => setGeminiApiKey(e.target.value)}
+                          className="w-full rounded-md border bg-background px-3 py-1.5 font-mono text-xs"
+                        />
+                      </div>
+                      <Button variant="outline" size="sm" onClick={() => setShowKey(!showKey)}>
+                        {showKey ? "Hide" : "Reveal"}
+                      </Button>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+
+              {/* Multimodal Computer Vision Settings */}
+              <Card>
+                <CardHeader>
+                  <CardTitle className="text-base flex items-center gap-2">
+                    <Eye className="h-4 w-4 text-purple-500" />
+                    Computer Vision & Document Processing
+                  </CardTitle>
+                  <CardDescription>
+                    Pillow & OpenCV thresholds for dominant color clustering, Delta-E palette distance, and WCAG contrast.
+                  </CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                    <div className="rounded-lg border p-3 bg-surface-1">
+                      <div className="text-xs font-semibold">Delta-E Distance Limit</div>
+                      <p className="text-2xs text-muted-foreground mt-0.5">Maximum color variance from brand palette</p>
+                      <div className="mt-3 flex items-center justify-between">
+                        <input
+                          type="range"
+                          min="5"
+                          max="30"
+                          value={config.visionDeltaETolerance}
+                          onChange={(e) => setConfig({ ...config, visionDeltaETolerance: Number(e.target.value) })}
+                          className="w-24 accent-purple-500"
+                        />
+                        <span className="font-mono text-xs">{config.visionDeltaETolerance} ΔE</span>
+                      </div>
+                    </div>
+
+                    <div className="rounded-lg border p-3 bg-surface-1">
+                      <div className="text-xs font-semibold">Min Contrast Ratio (WCAG)</div>
+                      <p className="text-2xs text-muted-foreground mt-0.5">WCAG 2.1 AA text standard</p>
+                      <div className="mt-3 flex items-center justify-between">
+                        <input
+                          type="range"
+                          min="3.0"
+                          max="7.0"
+                          step="0.5"
+                          value={config.minContrastRatio}
+                          onChange={(e) => setConfig({ ...config, minContrastRatio: Number(e.target.value) })}
+                          className="w-24 accent-purple-500"
+                        />
+                        <span className="font-mono text-xs">{config.minContrastRatio}:1</span>
+                      </div>
+                    </div>
+
+                    <div className="rounded-lg border p-3 bg-surface-1">
+                      <div className="text-xs font-semibold">Logo Safe Zone Padding</div>
+                      <p className="text-2xs text-muted-foreground mt-0.5">Clear space buffer around brand mark</p>
+                      <div className="mt-3 flex items-center justify-between">
+                        <input
+                          type="range"
+                          min="5"
+                          max="25"
+                          value={config.logoSafeZonePaddingPct}
+                          onChange={(e) => setConfig({ ...config, logoSafeZonePaddingPct: Number(e.target.value) })}
+                          className="w-24 accent-purple-500"
+                        />
+                        <span className="font-mono text-xs">{config.logoSafeZonePaddingPct}%</span>
+                      </div>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+            </div>
+          )}
+
+          {/* 4. RBAC & PERMISSIONS */}
+          {activeSection === "roles" && (
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-base flex items-center gap-2">
+                  <Users className="h-4 w-4 text-sys" />
+                  Role-Based Access Control (5 Roles)
+                </CardTitle>
+                <CardDescription>
+                  Enterprise role hierarchy enforcing backend permissions on scans, overrides, and approvals.
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-6">
+                {/* Active Role Switcher */}
+                <div className="rounded-lg border border-sys/30 bg-sys/5 p-4">
+                  <div className="text-xs font-semibold uppercase tracking-wider text-sys">
+                    Active Demo Role Switcher
+                  </div>
+                  <p className="text-xs text-muted-foreground mt-1 mb-3">
+                    Select a role to test permission boundaries in real time across the application:
+                  </p>
+                  <div className="flex flex-wrap gap-2">
+                    {ROLES.map((r) => (
+                      <button
+                        key={r.id}
+                        type="button"
+                        onClick={() => {
+                          setRole({ role: r.id });
+                          toast.info(`Switched active role to: ${r.label}`);
+                        }}
+                        className={cn(
+                          "rounded-md px-3 py-1.5 text-xs font-medium transition-colors border",
+                          currentRole === r.id
+                            ? "bg-sys text-white border-sys shadow-sm"
+                            : "bg-surface-1 text-muted-foreground hover:bg-surface-2"
+                        )}
+                      >
+                        {r.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* RBAC Matrix Table */}
+                <div className="overflow-x-auto rounded-lg border">
+                  <table className="w-full text-xs">
+                    <thead>
+                      <tr className="border-b bg-surface-2/60 text-left text-2xs uppercase tracking-wider text-muted-foreground">
+                        <th className="px-3 py-2 font-semibold">Capability</th>
+                        <th className="px-3 py-2 font-semibold text-center">Owner</th>
+                        <th className="px-3 py-2 font-semibold text-center">Brand Admin</th>
+                        <th className="px-3 py-2 font-semibold text-center">Marketing Mgr</th>
+                        <th className="px-3 py-2 font-semibold text-center">Creator</th>
+                        <th className="px-3 py-2 font-semibold text-center">Specialist</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y">
+                      <tr>
+                        <td className="px-3 py-2.5 font-medium">Create Campaigns & Run Audits</td>
+                        <td className="text-center text-emerald-500 font-bold">✓</td>
+                        <td className="text-center text-emerald-500 font-bold">✓</td>
+                        <td className="text-center text-emerald-500 font-bold">✓</td>
+                        <td className="text-center text-emerald-500 font-bold">✓</td>
+                        <td className="text-center text-muted-foreground">-</td>
+                      </tr>
+                      <tr>
+                        <td className="px-3 py-2.5 font-medium">Request Violation Overrides</td>
+                        <td className="text-center text-emerald-500 font-bold">✓</td>
+                        <td className="text-center text-emerald-500 font-bold">✓</td>
+                        <td className="text-center text-emerald-500 font-bold">✓</td>
+                        <td className="text-center text-emerald-500 font-bold">✓</td>
+                        <td className="text-center text-muted-foreground">-</td>
+                      </tr>
+                      <tr>
+                        <td className="px-3 py-2.5 font-medium">Approve Overrides & Campaigns</td>
+                        <td className="text-center text-emerald-500 font-bold">✓</td>
+                        <td className="text-center text-emerald-500 font-bold">✓</td>
+                        <td className="text-center text-emerald-500 font-bold">✓</td>
+                        <td className="text-center text-muted-foreground">-</td>
+                        <td className="text-center text-muted-foreground">-</td>
+                      </tr>
+                      <tr>
+                        <td className="px-3 py-2.5 font-medium">Ingest Guidelines & Publish Rules</td>
+                        <td className="text-center text-emerald-500 font-bold">✓</td>
+                        <td className="text-center text-emerald-500 font-bold">✓</td>
+                        <td className="text-center text-muted-foreground">-</td>
+                        <td className="text-center text-muted-foreground">-</td>
+                        <td className="text-center text-muted-foreground">-</td>
+                      </tr>
+                      <tr>
+                        <td className="px-3 py-2.5 font-medium">Legal / Regulatory Specialist Escalation</td>
+                        <td className="text-center text-emerald-500 font-bold">✓</td>
+                        <td className="text-center text-emerald-500 font-bold">✓</td>
+                        <td className="text-center text-muted-foreground">-</td>
+                        <td className="text-center text-muted-foreground">-</td>
+                        <td className="text-center text-emerald-500 font-bold">✓</td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+              </CardContent>
+            </Card>
+          )}
+
+          {/* 5. PREFERENCES */}
+          {activeSection === "appearance" && (
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-base flex items-center gap-2">
+                  <Palette className="h-4 w-4 text-sys" />
+                  Interface Preferences
+                </CardTitle>
+                <CardDescription>Personalize your workspace theme and UI density.</CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div className="flex items-center justify-between rounded-lg border p-4">
+                  <div>
+                    <div className="text-sm font-semibold">Theme Mode</div>
+                    <p className="text-xs text-muted-foreground">Toggle dark or light theme</p>
+                  </div>
+                  <div className="flex items-center gap-1 rounded-md border p-1 bg-surface-2">
+                    <button
+                      type="button"
+                      onClick={() => setRole({ theme: "light" })}
+                      className={cn(
+                        "flex items-center gap-1.5 rounded px-2.5 py-1 text-xs font-medium transition-colors",
+                        theme === "light" ? "bg-background text-foreground shadow-sm" : "text-muted-foreground"
+                      )}
+                    >
+                      <Sun className="h-3.5 w-3.5" /> Light
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setRole({ theme: "dark" })}
+                      className={cn(
+                        "flex items-center gap-1.5 rounded px-2.5 py-1 text-xs font-medium transition-colors",
+                        theme === "dark" ? "bg-background text-foreground shadow-sm" : "text-muted-foreground"
+                      )}
+                    >
+                      <Moon className="h-3.5 w-3.5" /> Dark
+                    </button>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
           )}
         </div>
       </div>

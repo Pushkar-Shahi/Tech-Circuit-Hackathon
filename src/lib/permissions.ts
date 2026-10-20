@@ -1,44 +1,83 @@
 import { useUiStore } from "@/lib/store";
+import type { Role } from "@/api/types";
 
-export type Role = "admin" | "accountant" | "reviewer" | "auditor";
+export type { Role };
 
-export const ROLES: { id: Role; label: string; description: string }[] = [
-  { id: "admin", label: "Admin", description: "Full access, including org, AI and detector configuration" },
-  { id: "accountant", label: "Accountant", description: "Runs reconciliations, matches, decides findings, approves rules" },
-  { id: "reviewer", label: "Reviewer", description: "Decides findings routed to human review" },
-  { id: "auditor", label: "Auditor", description: "Read-only access to everything, can export" },
+export const ROLES: { id: Role; label: string; description: string; user: string }[] = [
+  { id: "owner", label: "Organization Owner", description: "Full enterprise governance, all permissions, team settings", user: "Elena Vance" },
+  { id: "admin", label: "Brand Admin", description: "Manages guidelines, brand brain, rules, conflict resolution", user: "Marcus Sterling" },
+  { id: "manager", label: "Marketing Manager", description: "Reviews queue, decides overrides, approves campaigns to publish", user: "Sarah Jenkins" },
+  { id: "creator", label: "Creator / Designer", description: "Creates campaigns, reviews copilot suggestions, requests overrides", user: "Liam Chen" },
+  { id: "specialist", label: "Specialist Reviewer", description: "Legal and compliance escalation sign-off", user: "Rachel Adams" },
 ];
 
 export const PERMISSIONS = {
-  "run.create": "Start reconciliation runs",
-  "run.rerun": "Re-run with relaxed tolerances",
-  "run.finalize": "Finalize runs",
-  "match.manual": "Create manual matches",
-  "match.unmatch": "Unmatch pairs",
-  "finding.decide": "Approve / reject findings",
-  "rule.decide": "Approve AI-proposed rules",
-  "rule.toggle": "Enable / disable rules",
-  "detector.configure": "Configure detectors",
-  "report.generate": "Generate & download reports",
-  "audit.export": "Export audit log",
-  "settings.org": "Edit organization settings",
-  "settings.ai": "Edit AI & privacy settings",
+  "brand.manage": "Manage brand identities and rubrics",
+  "brain.ingest": "Upload and ingest brand guidelines",
+  "rules.manage": "Create, edit, and toggle brand rules",
+  "rules.approve": "Approve versioned rules",
+  "campaign.create": "Create campaigns and upload creative drafts",
+  "campaign.scan": "Run multimodal audits",
+  "campaign.edit": "Edit campaign content and assets",
+  "rewrite.accept": "Accept AI copilot rewrites",
+  "override.request": "Submit override requests with justification",
+  "override.decide": "Approve or reject creator override requests",
+  "campaign.approve": "Approve campaign drafts for distribution",
+  "campaign.publish": "Publish approved campaigns",
+  "campaign.escalate": "Escalate campaigns to legal specialists",
+  "analytics.view": "View governance analytics and friction reports",
+  "audit.view": "View append-only cryptographic audit logs",
+  "settings.manage": "Configure scoring weights and system settings",
 } as const;
 
 export type Permission = keyof typeof PERMISSIONS;
 
 const MATRIX: Record<Role, Permission[]> = {
-  admin: Object.keys(PERMISSIONS) as Permission[],
-  accountant: [
-    "run.create", "run.rerun", "run.finalize", "match.manual", "match.unmatch",
-    "finding.decide", "rule.decide", "rule.toggle", "report.generate",
+  owner: Object.keys(PERMISSIONS) as Permission[],
+  admin: [
+    "brand.manage",
+    "brain.ingest",
+    "rules.manage",
+    "rules.approve",
+    "campaign.create",
+    "campaign.scan",
+    "campaign.edit",
+    "rewrite.accept",
+    "override.decide",
+    "campaign.approve",
+    "analytics.view",
+    "audit.view",
   ],
-  reviewer: ["finding.decide", "report.generate"],
-  auditor: ["report.generate", "audit.export"],
+  manager: [
+    "campaign.create",
+    "campaign.scan",
+    "campaign.edit",
+    "rewrite.accept",
+    "override.decide",
+    "campaign.approve",
+    "campaign.publish",
+    "campaign.escalate",
+    "analytics.view",
+  ],
+  creator: [
+    "campaign.create",
+    "campaign.scan",
+    "campaign.edit",
+    "rewrite.accept",
+    "override.request",
+  ],
+  specialist: [
+    "campaign.scan",
+    "rewrite.accept",
+    "override.decide",
+    "campaign.approve",
+    "audit.view",
+    "analytics.view",
+  ],
 };
 
 export function roleCan(role: Role, perm: Permission): boolean {
-  return MATRIX[role].includes(perm);
+  return MATRIX[role]?.includes(perm) ?? false;
 }
 
 export function useCan(perm: Permission): boolean {

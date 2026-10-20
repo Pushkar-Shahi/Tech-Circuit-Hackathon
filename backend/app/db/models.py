@@ -1,6 +1,12 @@
-"""SQLAlchemy 2 models. Money is stored as a 2-dp decimal string (portable across SQLite/Postgres, never float)."""
+"""VeriBrand AI — SQLAlchemy 2.0 Models.
+
+Portable across PostgreSQL (with pgvector) and SQLite (with numpy/scipy cosine vector fallback).
+Includes append-only SHA-256 hash chained governance audit log.
+"""
 
 from datetime import UTC, datetime
+import hashlib
+import json
 
 from sqlalchemy import DDL, JSON, Boolean, Float, ForeignKey, Index, Integer, String, Text, event
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
@@ -14,247 +20,241 @@ class Base(DeclarativeBase):
     type_annotation_map = {dict: JSON, list: JSON}
 
 
-class RunRow(Base):
-    __tablename__ = "runs"
-    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+# ---------------------------------------------------------------------------
+# Organization & Multi-Brand Tenancy
+# ---------------------------------------------------------------------------
+
+class OrganizationRow(Base):
+    __tablename__ = "organizations"
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
     name: Mapped[str] = mapped_column(String(200))
-    period: Mapped[str] = mapped_column(String(7), index=True)
-    status: Mapped[str] = mapped_column(String(20), index=True)
-    accounts: Mapped[list] = mapped_column(JSON, default=list)
-    config: Mapped[dict] = mapped_column(JSON, default=dict)
-    stages: Mapped[list] = mapped_column(JSON, default=list)
-    file_ids: Mapped[list] = mapped_column(JSON, default=list)
-    request: Mapped[dict] = mapped_column(JSON, default=dict)
+    slug: Mapped[str] = mapped_column(String(100), unique=True, index=True)
+    scoring_config: Mapped[dict] = mapped_column(JSON, default=dict)
     created_at: Mapped[str] = mapped_column(String(30), default=utcnow)
-    created_by: Mapped[str] = mapped_column(String(120))
-    duration_ms: Mapped[int | None] = mapped_column(Integer, nullable=True)
-    archived: Mapped[bool] = mapped_column(Boolean, default=False)
-    error: Mapped[str | None] = mapped_column(Text, nullable=True)
-    ai_usage: Mapped[dict] = mapped_column(JSON, default=dict)
 
 
-class TxnRow(Base):
-    __tablename__ = "txns"
-    pk: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    id: Mapped[str] = mapped_column(String(32), index=True)
-    run_id: Mapped[str] = mapped_column(ForeignKey("runs.id", ondelete="CASCADE"), index=True)
-    source: Mapped[str] = mapped_column(String(8))
-    date: Mapped[str] = mapped_column(String(10))
-    amount: Mapped[str] = mapped_column(String(24))
-    description_raw: Mapped[str] = mapped_column(Text)
-    vendor_norm: Mapped[str] = mapped_column(String(200), index=True)
-    reference: Mapped[str | None] = mapped_column(String(80), nullable=True)
-    account_id: Mapped[str] = mapped_column(String(40))
-    gl_code: Mapped[str | None] = mapped_column(String(80), nullable=True)
-    source_file: Mapped[str | None] = mapped_column(String(200), nullable=True)
-    source_page: Mapped[int | None] = mapped_column(Integer, nullable=True)
-    raw_row: Mapped[dict] = mapped_column(JSON, default=dict)
-    # Rows dated outside the run period (e.g. first days of next month) — evidence only, not in totals.
-    external: Mapped[bool] = mapped_column(Boolean, default=False)
-    ord: Mapped[int] = mapped_column(Integer, default=0)
-
-    __table_args__ = (Index("ix_txns_run_txn", "run_id", "id", unique=True),)
-
-
-class PairRow(Base):
-    __tablename__ = "match_pairs"
-    id: Mapped[str] = mapped_column(String(32), primary_key=True)
-    run_id: Mapped[str] = mapped_column(ForeignKey("runs.id", ondelete="CASCADE"), index=True)
-    bank_txn_ids: Mapped[list] = mapped_column(JSON)
-    ledger_txn_ids: Mapped[list] = mapped_column(JSON)
-    score: Mapped[float] = mapped_column(Float)
-    pass_name: Mapped[str] = mapped_column(String(40))
-    breakdown: Mapped[dict] = mapped_column(JSON)
-    status: Mapped[str] = mapped_column(String(20), default="auto")
-    note: Mapped[str | None] = mapped_column(Text, nullable=True)
-    created_by: Mapped[str | None] = mapped_column(String(120), nullable=True)
-    created_at: Mapped[str] = mapped_column(String(30), default=utcnow)
-    ord: Mapped[int] = mapped_column(Integer, default=0)
-
-
-class FindingRow(Base):
-    __tablename__ = "findings"
-    id: Mapped[str] = mapped_column(String(32), primary_key=True)
-    run_id: Mapped[str] = mapped_column(ForeignKey("runs.id", ondelete="CASCADE"), index=True)
-    txn_id: Mapped[str] = mapped_column(String(32))
-    category: Mapped[str] = mapped_column(String(20))
-    risk_score: Mapped[float] = mapped_column(Float)
-    signals: Mapped[list] = mapped_column(JSON, default=list)
-    explanation: Mapped[str] = mapped_column(Text, default="")
-    evidence_txn_ids: Mapped[list] = mapped_column(JSON, default=list)
-    suggested_action: Mapped[str] = mapped_column(Text, default="")
-    confidence: Mapped[float] = mapped_column(Float)
-    routing: Mapped[str] = mapped_column(String(20))
-    routing_reason: Mapped[str | None] = mapped_column(String(40), nullable=True)
-    status: Mapped[str] = mapped_column(String(20), index=True)
-    prev_status: Mapped[str | None] = mapped_column(String(20), nullable=True)
-    agent_trace: Mapped[list] = mapped_column(JSON, default=list)
-    model_name: Mapped[str] = mapped_column(String(60))
-    model_version: Mapped[str] = mapped_column(String(40))
-    assignee: Mapped[str | None] = mapped_column(String(120), nullable=True)
+class BrandRow(Base):
+    __tablename__ = "brands"
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    org_id: Mapped[str] = mapped_column(ForeignKey("organizations.id", ondelete="CASCADE"), index=True)
+    name: Mapped[str] = mapped_column(String(200))
+    slug: Mapped[str] = mapped_column(String(100), index=True)
+    description: Mapped[str] = mapped_column(Text, default="")
+    tone_rubric: Mapped[dict] = mapped_column(JSON, default=dict)
+    identity: Mapped[dict] = mapped_column(JSON, default=dict)
+    created_by: Mapped[str] = mapped_column(String(120), default="System")
     created_at: Mapped[str] = mapped_column(String(30), default=utcnow)
     updated_at: Mapped[str] = mapped_column(String(30), default=utcnow)
-    human_category: Mapped[str | None] = mapped_column(String(20), nullable=True)
-    false_positive: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
-    # Internal only (never on the wire): every txn this finding explains.
-    covered_txn_ids: Mapped[list] = mapped_column(JSON, default=list)
-    ai_prompt: Mapped[str | None] = mapped_column(Text, nullable=True)
-    ai_response: Mapped[str | None] = mapped_column(Text, nullable=True)
-    ord: Mapped[int] = mapped_column(Integer, default=0)
 
 
-class CommentRow(Base):
-    __tablename__ = "comments"
-    id: Mapped[str] = mapped_column(String(40), primary_key=True)
-    finding_id: Mapped[str] = mapped_column(ForeignKey("findings.id", ondelete="CASCADE"), index=True)
-    author: Mapped[str] = mapped_column(String(120))
-    body: Mapped[str] = mapped_column(Text)
+# ---------------------------------------------------------------------------
+# Pillar A: Ingestion & Knowledge Stores (Brand Brain)
+# ---------------------------------------------------------------------------
+
+class KnowledgeDocRow(Base):
+    __tablename__ = "knowledge_documents"
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    brand_id: Mapped[str] = mapped_column(ForeignKey("brands.id", ondelete="CASCADE"), index=True)
+    title: Mapped[str] = mapped_column(String(255))
+    document_type: Mapped[str] = mapped_column(String(50), index=True)
+    file_path: Mapped[str] = mapped_column(String(500))
+    file_size: Mapped[int] = mapped_column(Integer, default=0)
+    mime_type: Mapped[str] = mapped_column(String(100), default="application/pdf")
+    status: Mapped[str] = mapped_column(String(30), default="parsed", index=True)
+    extracted_metadata: Mapped[dict] = mapped_column(JSON, default=dict)
     created_at: Mapped[str] = mapped_column(String(30), default=utcnow)
-    mentions: Mapped[list] = mapped_column(JSON, default=list)
 
 
-class EventRow(Base):
-    __tablename__ = "run_events"
-    pk: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    run_id: Mapped[str] = mapped_column(ForeignKey("runs.id", ondelete="CASCADE"), index=True)
-    seq: Mapped[int] = mapped_column(Integer)
-    ts: Mapped[str] = mapped_column(String(30))
-    level: Mapped[str] = mapped_column(String(8))
-    stage: Mapped[str] = mapped_column(String(40))
-    message: Mapped[str] = mapped_column(Text)
+class KnowledgeChunkRow(Base):
+    """Vector Knowledge Store chunks for Brand Voice, Target Personas & Approved Copy."""
+    __tablename__ = "knowledge_chunks"
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    brand_id: Mapped[str] = mapped_column(ForeignKey("brands.id", ondelete="CASCADE"), index=True)
+    document_id: Mapped[str | None] = mapped_column(ForeignKey("knowledge_documents.id", ondelete="SET NULL"), nullable=True, index=True)
+    category: Mapped[str] = mapped_column(String(50), index=True)  # brand_voice | audience_persona | campaign_example | style_guide
+    content: Mapped[str] = mapped_column(Text)
+    page_number: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    section_title: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    embedding: Mapped[list] = mapped_column(JSON, default=list)  # float vector
+    created_at: Mapped[str] = mapped_column(String(30), default=utcnow)
 
 
-class ProposedRuleRow(Base):
-    __tablename__ = "proposed_rules"
-    id: Mapped[str] = mapped_column(String(40), primary_key=True)
-    run_id: Mapped[str] = mapped_column(ForeignKey("runs.id", ondelete="CASCADE"), index=True)
-    title: Mapped[str] = mapped_column(String(200))
-    description: Mapped[str] = mapped_column(Text)
-    scope: Mapped[str] = mapped_column(String(200))
-    params: Mapped[dict] = mapped_column(JSON)
-    supporting_txn_ids: Mapped[list] = mapped_column(JSON, default=list)
-    simulation: Mapped[dict] = mapped_column(JSON)
-    confidence: Mapped[float] = mapped_column(Float)
-    status: Mapped[str] = mapped_column(String(20), default="proposed")
-    model_name: Mapped[str] = mapped_column(String(60))
-    model_version: Mapped[str] = mapped_column(String(40))
+class FactRegistryRow(Base):
+    """Fact Registry: Verified pricing, product names, stats, legal disclaimers, banned terms."""
+    __tablename__ = "fact_registry"
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    brand_id: Mapped[str] = mapped_column(ForeignKey("brands.id", ondelete="CASCADE"), index=True)
+    document_id: Mapped[str | None] = mapped_column(ForeignKey("knowledge_documents.id", ondelete="SET NULL"), nullable=True)
+    category: Mapped[str] = mapped_column(String(50), index=True)  # pricing | product_name | statistic | legal_disclaimer | prohibited_term | deprecated_term
+    canonical_value: Mapped[str] = mapped_column(Text)
+    aliases_or_deprecated: Mapped[list] = mapped_column(JSON, default=list)
+    severity_if_violated: Mapped[str] = mapped_column(String(20), default="critical")  # critical | high | medium | low
+    source_citation: Mapped[dict] = mapped_column(JSON, default=dict)
+    status: Mapped[str] = mapped_column(String(20), default="active", index=True)  # active | deprecated | prohibited
+    created_at: Mapped[str] = mapped_column(String(30), default=utcnow)
+
+
+class VisualAssetRow(Base):
+    """Visual Asset Registry: Approved brand colors, typography, logos, dimensions, safe zones."""
+    __tablename__ = "visual_asset_registry"
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    brand_id: Mapped[str] = mapped_column(ForeignKey("brands.id", ondelete="CASCADE"), index=True)
+    document_id: Mapped[str | None] = mapped_column(ForeignKey("knowledge_documents.id", ondelete="SET NULL"), nullable=True)
+    asset_type: Mapped[str] = mapped_column(String(50), index=True)  # color | font | logo | dimension
+    name: Mapped[str] = mapped_column(String(100))
+    specs: Mapped[dict] = mapped_column(JSON, default=dict)
+    status: Mapped[str] = mapped_column(String(20), default="approved", index=True)
     created_at: Mapped[str] = mapped_column(String(30), default=utcnow)
 
 
 class RuleRow(Base):
+    """Versioned Brand Rules with source citations and conflict detection status."""
     __tablename__ = "rules"
-    id: Mapped[str] = mapped_column(String(20), primary_key=True)
-    name: Mapped[str] = mapped_column(String(200))
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)  # e.g. RULE-FACT-01
+    brand_id: Mapped[str] = mapped_column(ForeignKey("brands.id", ondelete="CASCADE"), index=True)
+    name: Mapped[str] = mapped_column(String(255))
     description: Mapped[str] = mapped_column(Text)
-    scope: Mapped[str] = mapped_column(String(20))
-    scope_value: Mapped[str | None] = mapped_column(String(200), nullable=True)
-    params: Mapped[dict] = mapped_column(JSON)
-    enabled: Mapped[bool] = mapped_column(Boolean, default=True)
-    created_by: Mapped[dict] = mapped_column(JSON)
-    hit_count: Mapped[int] = mapped_column(Integer, default=0)
-    last_triggered: Mapped[str | None] = mapped_column(String(30), nullable=True)
+    pillar: Mapped[str] = mapped_column(String(30), index=True)  # fact | tone | visual | legal
+    severity: Mapped[str] = mapped_column(String(20), default="critical", index=True)  # critical | high | medium | low
+    source_document_id: Mapped[str | None] = mapped_column(ForeignKey("knowledge_documents.id", ondelete="SET NULL"), nullable=True)
+    source_page: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    source_section: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    status: Mapped[str] = mapped_column(String(20), default="active", index=True)  # active | draft | deprecated
     version: Mapped[int] = mapped_column(Integer, default=1)
-    proposed_rule_id: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    conflict_status: Mapped[dict] = mapped_column(JSON, default=dict)  # {has_conflict: bool, conflicting_rule_id, details}
+    created_at: Mapped[str] = mapped_column(String(30), default=utcnow)
+    updated_at: Mapped[str] = mapped_column(String(30), default=utcnow)
 
 
 class RuleVersionRow(Base):
     __tablename__ = "rule_versions"
     pk: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    id: Mapped[str] = mapped_column(String(40), unique=True)
-    rule_id: Mapped[str] = mapped_column(String(20), index=True)
+    id: Mapped[str] = mapped_column(String(40), unique=True, index=True)
+    rule_id: Mapped[str] = mapped_column(ForeignKey("rules.id", ondelete="CASCADE"), index=True)
     version: Mapped[int] = mapped_column(Integer)
     changed_by: Mapped[str] = mapped_column(String(120))
-    changed_at: Mapped[str] = mapped_column(String(30))
+    changed_at: Mapped[str] = mapped_column(String(30), default=utcnow)
     before: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     after: Mapped[dict] = mapped_column(JSON)
-    note: Mapped[str] = mapped_column(Text, default="")
+    change_reason: Mapped[str] = mapped_column(Text, default="")
 
 
-class DetectorRow(Base):
-    __tablename__ = "detectors"
-    id: Mapped[str] = mapped_column(String(40), primary_key=True)
-    name: Mapped[str] = mapped_column(String(120))
-    description: Mapped[str] = mapped_column(Text)
-    example: Mapped[str] = mapped_column(Text)
-    enabled: Mapped[bool] = mapped_column(Boolean, default=True)
-    threshold: Mapped[float] = mapped_column(Float)
-    weight: Mapped[float] = mapped_column(Float)
-    ord: Mapped[int] = mapped_column(Integer, default=0)
+# ---------------------------------------------------------------------------
+# Pillar B, C, D: Campaigns, Multimodal Audits & Copilot Workspace
+# ---------------------------------------------------------------------------
+
+class CampaignRow(Base):
+    """Marketing campaign or content draft subject to brand governance."""
+    __tablename__ = "campaigns"
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    org_id: Mapped[str] = mapped_column(ForeignKey("organizations.id", ondelete="CASCADE"), index=True)
+    brand_id: Mapped[str] = mapped_column(ForeignKey("brands.id", ondelete="CASCADE"), index=True)
+    name: Mapped[str] = mapped_column(String(255))
+    channel: Mapped[str] = mapped_column(String(50), index=True)  # social_ad | email_newsletter | landing_page | display_banner | print_brochure
+    department: Mapped[str] = mapped_column(String(100), default="Growth Marketing", index=True)
+    region: Mapped[str] = mapped_column(String(50), default="Global", index=True)
+    agency: Mapped[str] = mapped_column(String(100), default="Internal Team")
+    target_audience: Mapped[str] = mapped_column(String(200), default="Enterprise B2B Decision Makers")
+    status: Mapped[str] = mapped_column(String(30), default="draft", index=True)
+    created_by: Mapped[str] = mapped_column(String(120))
+    created_at: Mapped[str] = mapped_column(String(30), default=utcnow)
+    updated_at: Mapped[str] = mapped_column(String(30), default=utcnow)
 
 
-class AuditRow(Base):
-    """Append-only (UPDATE/DELETE blocked by triggers) with a SHA-256 hash chain."""
+class CampaignRevisionRow(Base):
+    """Versioned snapshot of draft content, scores, and visual assets."""
+    __tablename__ = "campaign_revisions"
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    campaign_id: Mapped[str] = mapped_column(ForeignKey("campaigns.id", ondelete="CASCADE"), index=True)
+    revision_number: Mapped[int] = mapped_column(Integer, default=1)
+    content_text: Mapped[str] = mapped_column(Text)
+    asset_urls: Mapped[list] = mapped_column(JSON, default=list)  # list of uploaded creative images/PDFs
+    brand_readiness_score: Mapped[float] = mapped_column(Float, default=100.0)
+    score_breakdown: Mapped[dict] = mapped_column(JSON, default=dict)
+    fast_track_eligible: Mapped[bool] = mapped_column(Boolean, default=False)
+    created_by: Mapped[str] = mapped_column(String(120))
+    created_at: Mapped[str] = mapped_column(String(30), default=utcnow)
+    change_summary: Mapped[str] = mapped_column(Text, default="Initial draft")
 
-    __tablename__ = "audit_log"
+
+class AuditFindingRow(Base):
+    """Multimodal audit findings from Fact Checker, Tone Analyzer, and Visual Inspector."""
+    __tablename__ = "audit_findings"
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)  # e.g. FIND-001
+    campaign_id: Mapped[str] = mapped_column(ForeignKey("campaigns.id", ondelete="CASCADE"), index=True)
+    revision_id: Mapped[str] = mapped_column(ForeignKey("campaign_revisions.id", ondelete="CASCADE"), index=True)
+    rule_id: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
+    category: Mapped[str] = mapped_column(String(20), index=True)  # factual | tone | visual | legal
+    severity: Mapped[str] = mapped_column(String(20), index=True)  # critical | high | medium | low
+    affected_text: Mapped[str | None] = mapped_column(Text, nullable=True)
+    text_offset: Mapped[dict | None] = mapped_column(JSON, nullable=True)  # {start: int, end: int}
+    visual_location: Mapped[dict | None] = mapped_column(JSON, nullable=True)  # {page, bbox: [x, y, w, h]}
+    evidence: Mapped[str] = mapped_column(Text)
+    source_citation: Mapped[dict] = mapped_column(JSON, default=dict)
+    explanation: Mapped[str] = mapped_column(Text)
+    suggested_resolutions: Mapped[dict] = mapped_column(JSON, default=dict)  # {strict_compliance, concise, conversational}
+    certainty: Mapped[float] = mapped_column(Float, default=1.0)
+    uncertainty_flag: Mapped[bool] = mapped_column(Boolean, default=False)
+    status: Mapped[str] = mapped_column(String(20), default="open", index=True)  # open | accepted | rejected | overridden
+    created_at: Mapped[str] = mapped_column(String(30), default=utcnow)
+    updated_at: Mapped[str] = mapped_column(String(30), default=utcnow)
+
+
+class FindingOverrideRow(Base):
+    """Override request with mandatory justification submitted to managers."""
+    __tablename__ = "finding_overrides"
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    finding_id: Mapped[str] = mapped_column(ForeignKey("audit_findings.id", ondelete="CASCADE"), index=True)
+    campaign_id: Mapped[str] = mapped_column(ForeignKey("campaigns.id", ondelete="CASCADE"), index=True)
+    rule_id: Mapped[str | None] = mapped_column(String(36), nullable=True, index=True)
+    requested_by: Mapped[str] = mapped_column(String(120))
+    justification: Mapped[str] = mapped_column(Text)
+    status: Mapped[str] = mapped_column(String(20), default="pending", index=True)  # pending | approved | rejected
+    decided_by: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    decision_note: Mapped[str | None] = mapped_column(Text, nullable=True)
+    decided_at: Mapped[str | None] = mapped_column(String(30), nullable=True)
+    created_at: Mapped[str] = mapped_column(String(30), default=utcnow)
+
+
+class GovernanceCommentRow(Base):
+    __tablename__ = "governance_comments"
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    campaign_id: Mapped[str] = mapped_column(ForeignKey("campaigns.id", ondelete="CASCADE"), index=True)
+    finding_id: Mapped[str | None] = mapped_column(ForeignKey("audit_findings.id", ondelete="SET NULL"), nullable=True, index=True)
+    author: Mapped[str] = mapped_column(String(120))
+    body: Mapped[str] = mapped_column(Text)
+    mentions: Mapped[list] = mapped_column(JSON, default=list)
+    created_at: Mapped[str] = mapped_column(String(30), default=utcnow)
+
+
+# ---------------------------------------------------------------------------
+# Pillar E: Governance Tracking & Append-Only SHA-256 Audit Log
+# ---------------------------------------------------------------------------
+
+class GovernanceAuditRow(Base):
+    """Append-only audit log protected by SHA-256 hash chaining and DB triggers."""
+    __tablename__ = "governance_audit_log"
     seq: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    id: Mapped[str] = mapped_column(String(20), unique=True)
-    ts: Mapped[str] = mapped_column(String(30), index=True)
-    actor_type: Mapped[str] = mapped_column(String(10))
+    id: Mapped[str] = mapped_column(String(36), unique=True, index=True)
+    ts: Mapped[str] = mapped_column(String(30), default=utcnow, index=True)
     actor_name: Mapped[str] = mapped_column(String(120))
-    action: Mapped[str] = mapped_column(String(60))
-    target: Mapped[str] = mapped_column(String(120), index=True)
-    before: Mapped[dict | list | str | None] = mapped_column(JSON, nullable=True)
-    after: Mapped[dict | list | str | None] = mapped_column(JSON, nullable=True)
-    run_id: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
-    model_version: Mapped[str | None] = mapped_column(String(80), nullable=True)
-    ip: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    actor_role: Mapped[str] = mapped_column(String(50))
+    action: Mapped[str] = mapped_column(String(60), index=True)
+    target_type: Mapped[str] = mapped_column(String(40))
+    target_id: Mapped[str] = mapped_column(String(64), index=True)
+    before_state: Mapped[dict | list | None] = mapped_column(JSON, nullable=True)
+    after_state: Mapped[dict | list | None] = mapped_column(JSON, nullable=True)
     prev_hash: Mapped[str] = mapped_column(String(64))
     hash: Mapped[str] = mapped_column(String(64))
 
 
-class ReportRow(Base):
-    __tablename__ = "reports"
-    id: Mapped[str] = mapped_column(String(20), primary_key=True)
-    run_id: Mapped[str] = mapped_column(String(64), index=True)
-    run_period: Mapped[str] = mapped_column(String(7))
-    type: Mapped[str] = mapped_column(String(30))
-    format: Mapped[str] = mapped_column(String(4))
-    name: Mapped[str] = mapped_column(String(120))
-    size: Mapped[int] = mapped_column(Integer)
-    created_at: Mapped[str] = mapped_column(String(30))
-    created_by: Mapped[str] = mapped_column(String(120))
-    content: Mapped[str | None] = mapped_column(Text, nullable=True)
-    options: Mapped[dict] = mapped_column(JSON, default=dict)
-    share_token: Mapped[str] = mapped_column(String(40), unique=True)
-    share_expires_at: Mapped[str] = mapped_column(String(30))
-
-
-class SettingsRow(Base):
-    __tablename__ = "settings"
-    id: Mapped[int] = mapped_column(Integer, primary_key=True)
-    data: Mapped[dict] = mapped_column(JSON)
-
-
-class UploadRow(Base):
-    __tablename__ = "uploads"
-    id: Mapped[str] = mapped_column(String(20), primary_key=True)
-    meta: Mapped[dict] = mapped_column(JSON)  # UploadedFile wire dict
-    kind: Mapped[str] = mapped_column(String(8))
-    format: Mapped[str] = mapped_column(String(4))
-    detected: Mapped[str] = mapped_column(String(30))  # parser id: icici | tally | generic | hdfc_pdf | pdf
-    path: Mapped[str] = mapped_column(String(400))
-    columns: Mapped[list] = mapped_column(JSON, default=list)
-    rows: Mapped[list] = mapped_column(JSON, default=list)  # all parsed rows keyed by original headers
-    mapping: Mapped[dict] = mapped_column(JSON, default=dict)  # auto mapping canonical -> source column
-    created_at: Mapped[str] = mapped_column(String(30), default=utcnow)
-
-
-class AiCacheRow(Base):
-    __tablename__ = "ai_cache"
-    hash: Mapped[str] = mapped_column(String(64), primary_key=True)
-    model: Mapped[str] = mapped_column(String(60))
-    response: Mapped[dict] = mapped_column(JSON)
-    created_at: Mapped[str] = mapped_column(String(30), default=utcnow)
-
-
-# Append-only enforcement for the audit table (SQLite). The Alembic migration installs the
-# equivalent for Postgres.
+# Append-only enforcement for SQLite (DB triggers prevent UPDATE and DELETE)
 for _op in ("UPDATE", "DELETE"):
     event.listen(
-        AuditRow.__table__,
+        GovernanceAuditRow.__table__,
         "after_create",
         DDL(
-            f"CREATE TRIGGER IF NOT EXISTS audit_no_{_op.lower()} BEFORE {_op} ON audit_log "
-            "BEGIN SELECT RAISE(ABORT, 'audit_log is append-only'); END;"
+            f"CREATE TRIGGER IF NOT EXISTS audit_no_{_op.lower()} BEFORE {_op} ON governance_audit_log "
+            "BEGIN SELECT RAISE(ABORT, 'governance_audit_log is append-only'); END;"
         ).execute_if(dialect="sqlite"),
     )

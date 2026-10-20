@@ -27,11 +27,11 @@ export const useUiStore = create<UiState>()(
     (set) => ({
       theme: "dark",
       density: "comfortable",
-      locale: "en-IN",
-      currency: "INR",
+      locale: "en-US",
+      currency: "USD",
       dateFormat: "dd MMM yyyy",
       sidebarCollapsed: false,
-      role: "accountant",
+      role: "admin",
       drawerWidth: 720,
       orgId: "org_acme",
       commandOpen: false,
@@ -40,7 +40,7 @@ export const useUiStore = create<UiState>()(
       set: (patch) => set(patch),
     }),
     {
-      name: "reconai-ui",
+      name: "veribrand-ui",
       partialize: ({ commandOpen: _c, helpOpen: _h, mobileNavOpen: _m, set: _s, ...rest }) => rest,
     },
   ),

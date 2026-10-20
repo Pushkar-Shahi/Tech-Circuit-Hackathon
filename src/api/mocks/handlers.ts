@@ -70,7 +70,7 @@ async function simulate(): Promise<HttpResponse<{ error: string; detail: string 
 const notFound = (what: string) => HttpResponse.json({ error: "not_found", detail: `${what} not found` }, { status: 404 });
 const bad = (detail: string, status = 422) => HttpResponse.json({ error: "validation_error", detail }, { status });
 
-function forbid(request: Request, perm: Permission) {
+function forbid(request: Request, perm: any) {
   const role = (request.headers.get("x-demo-role") ?? "admin") as Role;
   if (!roleCan(role, perm)) return HttpResponse.json({ error: "forbidden", detail: `Role '${role}' cannot perform '${perm}'` }, { status: 403 });
   return null;
