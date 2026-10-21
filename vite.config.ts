@@ -10,6 +10,15 @@ export default defineConfig({
     alias: { "@": path.resolve(__dirname, "src") },
     dedupe: ["react", "react-dom"],
   },
+  server: {
+    port: 5174,
+    proxy: {
+      "/api": {
+        target: "http://127.0.0.1:8000",
+        changeOrigin: true,
+      },
+    },
+  },
   // Pre-bundle everything up front so lazily-loaded routes never trigger a
   // mid-session re-optimisation (which can load two React copies).
   optimizeDeps: {
