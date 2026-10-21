@@ -5,11 +5,11 @@
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="theme-color" content="#0B0F19" />
-    <title>ReconAI — Bank Reconciliation Agent</title>
+    <title>VeriBrand AI — Autonomous Brand Governance & Multimodal Compliance Platform</title>
     <script>
       // Apply persisted theme before first paint to avoid a flash.
       try {
-        var s = JSON.parse(localStorage.getItem("reconai-ui") || "{}").state || {};
+        var s = JSON.parse(localStorage.getItem("veribrand-ui") || localStorage.getItem("reconai-ui") || "{}").state || {};
         var t = s.theme || "dark";
         if (t === "system") t = matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
         document.documentElement.classList.toggle("dark", t === "dark");

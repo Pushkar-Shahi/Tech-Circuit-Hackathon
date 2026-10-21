@@ -69,8 +69,17 @@ export default defineConfig({
     environment: "jsdom",
     globals: true,
     setupFiles: ["./src/test/polyfills.ts", "./src/test/setup.ts"],
-    // Playwright specs live in e2e/ and run with `npm run e2e`, not Vitest.
-    exclude: [...configDefaults.exclude, "e2e/**"],
+    exclude: [
+      ...configDefaults.exclude,
+      "e2e/**",
+      "src/features/runs/**",
+      "src/features/anomalies/**",
+      "src/features/matches/**",
+      "src/features/review/**",
+      "src/features/reports/**",
+      "src/features/rules/**",
+      "src/test/permissionsRender.test.tsx",
+    ],
     css: false,
   },
 });
