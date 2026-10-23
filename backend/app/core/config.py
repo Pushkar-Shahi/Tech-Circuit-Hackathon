@@ -16,7 +16,7 @@ class Settings(BaseSettings):
     gemini_api_key: SecretStr | None = None
     ai_model: str = "gemini-2.5-flash"
     database_url: str = "sqlite:///./veribrand.db"
-    cors_origins: str = "http://localhost:5173,http://localhost:8080"
+    cors_origins: str = "http://localhost:5173,http://localhost:5174,http://127.0.0.1:5173,http://127.0.0.1:5174,http://localhost:8080"
     auth_mode: str = Field(default="demo", pattern="^(demo|jwt)$")
     public_base_url: str = "http://localhost:8000"
     data_dir: Path = BACKEND_DIR / "data"

@@ -19,9 +19,43 @@ from PIL import Image
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app.core.config import BACKEND_DIR, get_settings
 from app.db.models import VisualAssetRow
 
 log = logging.getLogger("veribrand.visual_inspector")
+
+
+def _resolve_asset_path(asset_url: str) -> Path | None:
+    """Resolves asset path cleanly across local uploads, relative paths, and public assets."""
+    try:
+        p = Path(asset_url)
+        if p.is_file():
+            return p
+    except Exception:
+        pass
+
+    settings = get_settings()
+    clean_name = asset_url.lstrip("/")
+
+    candidates = [
+        settings.data_dir / "uploads" / clean_name,
+        settings.data_dir / clean_name,
+        BACKEND_DIR / "data" / "uploads" / clean_name,
+        BACKEND_DIR / "data" / clean_name,
+        BACKEND_DIR.parent / "public" / clean_name,
+        BACKEND_DIR.parent / "Tech-Circuit-Hackathon" / "public" / clean_name,
+        BACKEND_DIR / clean_name,
+    ]
+
+    for candidate in candidates:
+        try:
+            if candidate.is_file():
+                return candidate
+        except Exception:
+            continue
+
+    log.debug("Visual asset '%s' could not be resolved locally; falling back to simulated analysis", asset_url)
+    return None
 
 
 def _hex_to_rgb(hex_code: str) -> tuple[int, int, int]:
@@ -115,8 +149,8 @@ def inspect_visual_assets(
         return findings
 
     for asset_idx, asset_url in enumerate(asset_urls):
-        local_path = Path(asset_url)
-        dominant_colors = [("#FF5722", 0.45), ("#0A192F", 0.35), ("#FFFFFF", 0.20)] if not local_path.exists() else extract_dominant_colors(local_path)
+        local_path = _resolve_asset_path(asset_url)
+        dominant_colors = extract_dominant_colors(local_path) if local_path and local_path.is_file() else [("#FF5722", 0.45), ("#0A192F", 0.35), ("#FFFFFF", 0.20)]
 
         # 1. Check Palette Mismatches
         for hex_color, pct in dominant_colors:

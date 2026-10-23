@@ -1,365 +1,250 @@
-# ReconAI: Automated Bank Reconciliation & Anomaly Investigation Agent
+# VeriBrand AI: Autonomous Brand Governance & Multimodal Compliance Platform
 
-Accountants spend **8–15 hours a month** matching bank statements to the general ledger by hand, then
-digging through the leftovers to find out whether each one is a timing difference, a missing entry or
-fraud. ReconAI automates this work in layers, cheapest and most reliable first:
+Enterprise marketing teams produce thousands of creative assets across dozens of regional agencies and freelance creators. Without continuous automated guardrails, brands suffer from **brand drift**, **outdated pricing schedules**, **prohibited claims with regulatory liability**, **off-brand tone**, and **visual styling violations**.
 
-1. **Deterministic rules first.** Exact, date-tolerant, group-sum and fuzzy-vendor matching clear the bulk
-   of transactions, and the outcome is fully reproducible.
-2. **LLM only on the hard leftovers.** A Gemini agent investigates the unmatched and suspicious items with
-   deterministic tools, then returns a structured explanation, a category, a confidence and its evidence.
-3. **Humans only on true outliers.** Potential fraud, high-value items, low-confidence and unknown
-   cases go to a review queue. Nothing risky is auto-approved.
+**VeriBrand AI** automates brand governance across five foundational pillars—delivering deterministic verification, explainable AI rewrites, and role-enforced approval workflows.
 
-> **Deterministic code decides what is true. The AI explains why. Humans decide anything risky.**
-> In the UI, every AI claim shows its confidence, model/version and supporting evidence, and carries a
-> violet ✦ AI badge.
+> **Deterministic rules establish what is compliant. Explainable AI suggests context-aware rewrites. Humans retain authority over high-risk policy exceptions.**
 
 ---
 
-## Architecture
+## The Five Pillars of Brand Governance
 
 ```mermaid
-flowchart LR
-    subgraph IN[Inputs]
-      B[Bank statements<br/>PDF / CSV]
-      L[Ledger export<br/>Tally / Zoho CSV]
+flowchart TD
+    subgraph A["Pillar A · Ingest (Brand Brain)"]
+        G[Brand Guidelines PDF]
+        F[Pricing & Fact CSV]
+        V[Visual Style Tokens]
+        G & F & V --> COMP[Rule Compiler & Conflict Detector]
+        COMP --> BRAIN[(Brand Brain<br/>Vector Store · Fact Registry · Visual Registry)]
     end
 
-    B & L --> ING["<b>Ingest</b><br/>pdfplumber tables<br/>+ Tesseract OCR fallback<br/>balance sanity check"]
-    ING --> NORM["<b>Normalize</b><br/>vendor canonicalization<br/>sign convention, dates<br/>account-number masking"]
-    NORM --> MATCH["<b>Match</b><br/>P1 Exact → P2 Date ±3d →<br/>P4 Group sum 1:N / N:1 →<br/>P3 Fuzzy vendor<br/><i>blocking + scipy<br/>linear_sum_assignment</i>"]
-    MATCH --> DET["<b>Detect</b><br/>10 detectors<br/>noisy-OR risk score"]
-    DET --> AI["<b>AI Investigate</b> ✦<br/>Gemini function calling<br/>5 deterministic tools<br/>structured output<br/><i>offline template fallback</i>"]
-    AI --> VER{"<b>Verify / Route</b>"}
-    VER -- "potential fraud · high value ·<br/>confidence &lt; 0.7 · unknown" --> HR["<b>Human review</b><br/>approve / reject / escalate<br/>notes required for risky items"]
-    VER -- "low risk, high confidence" --> AUTO[Auto-resolved]
-    HR & AUTO --> FIN["<b>Finalize</b><br/>unexplained must be ₹0.00"]
-    FIN --> REP["<b>Reports</b><br/>CSV / PDF + share link"]
+    subgraph B["Pillar B · Analyze (Multimodal Auditing)"]
+        DRAFT[Campaign Draft Copy & Visual Assets]
+        DRAFT --> FC[Fact Checker<br/>Pricing, stats, banned claims]
+        DRAFT --> TA[Tone Analyzer<br/>Formality, confidence, voice rubric]
+        DRAFT --> VI[Visual Inspector<br/>WCAG contrast, palettes, logo safe zones]
+        FC & TA & VI --> AUDIT[Multimodal Audit Result]
+    end
 
-    MATCH -. "unmatched leftovers" .-> RR["<b>P5 Relaxed re-run</b><br/>wider tolerances,<br/>labelled & reviewable"]
-    RR -. "new pairs" .-> MATCH
+    subgraph C["Pillar C · Suggest (Explainable AI Copilot)"]
+        AUDIT --> HIGHLIGHT[Interactive Highlights<br/>Red: Fact/Legal · Amber: Tone · Purple: Visual]
+        HIGHLIGHT --> REWRITE[3-Mode Contextual Rewrites<br/>Strict Compliance · Concise · Conversational]
+        HIGHLIGHT --> DIFF[Original vs Revised Word Diff]
+    end
 
-    AI -. "recurring patterns" .-> PR["AI-proposed rules"]
-    PR -- "human approves" --> RULES[(Active rules)]
-    RULES -. "applied on next run" .-> MATCH
+    subgraph D["Pillar D · Manage (Workflow & Readiness Score)"]
+        AUDIT --> SCORE[Brand Readiness Score 0–100]
+        SCORE -- "Score >= 95 · Zero Critical" --> FAST[Fast-Track Automated Approval]
+        SCORE -- "Creator Exception" --> OVR[Override Request with Justification]
+        OVR --> QUEUE[Manager Approval Queue]
+        QUEUE --> APPR[Role-Gated Approval / Rejection]
+    end
+
+    subgraph E["Pillar E · Track (Analytics & Friction Detector)"]
+        FAST & APPR --> LOG[(SHA-256 Append-Only Audit Log)]
+        OVR --> FRICTION[Rule Friction Detector<br/>Flags >25% override rates]
+        LOG & FRICTION --> ANALYTICS[Governance Trends & Channel Drift Heatmaps]
+    end
 ```
 
-**Detectors** (`backend/app/detect/detectors.py`): `duplicate_detector`, `approval_limit` (just below the
-approval threshold), `new_vendor`, `weekend_payment`, `high_value`, `period_boundary`, `amount_outlier`,
-`no_counterpart`, `amount_mismatch`, `round_amount`. Signals are combined into one risk score with a
-noisy-OR: `risk = 1 − ∏(1 − wᵢ·sᵢ)`.
+---
 
-**Agent tools** (`backend/app/agent/tools.py`): `search_ledger`, `find_duplicates`, `get_vendor_history`,
-`check_period_boundary`, `get_balance_context`. All five are deterministic queries over the run's data,
-so the model can only cite evidence that really exists. The output is validated against a schema
-(category, explanation, evidence txn ids, suggested action, confidence). When no Gemini key is
-configured, or the call fails or times out, a deterministic template explanation is used instead.
+## Core Capabilities
 
-**Two feedback loops**
+### 1. Pillar A · Ingest (Brand Brain & Conflict Detection)
+- **Three Knowledge Stores**:
+  - **Vector Store (RAG)**: Chunks brand philosophy, mission statements, and editorial voice guidelines.
+  - **Fact Registry**: Structured database of canonical pricing, SLA commitments, certified statistics, legal disclaimers, and prohibited terms.
+  - **Visual Asset Registry**: Approved primary/secondary hex palettes, maximum Delta-E tolerances, font weight allowances, and logo clear-space rules.
+- **Cross-Document Conflict Engine**: Flags contradictory rules across uploaded guidelines (e.g., conflicting pricing or incompatible brand voice directives) before rules are compiled.
 
-1. **Relaxed-tolerance re-run (P5).** Only the unmatched items are re-matched, with wider date, amount and
-   vendor tolerances. New pairs are labelled "P5 · Relaxed re-run" and can be unmatched.
-2. **Rule learning.** The agent proposes matching rules from recurring patterns (e.g. "2% TDS deducted by
-   customer X"). A human approves, edits or rejects each proposal, and the matcher applies approved rules
-   on later runs. Every rule is versioned.
+### 2. Pillar B · Analyze (Multimodal Parallel Auditing)
+- **Fact Checker**: Deterministic string matching and fuzzy matching (via regex, RapidFuzz, SequenceMatcher) detects outdated prices (`$39`), deprecated product names (`Acme Cloud Legacy`), unsupported claims (`100% unhackable`), and missing mandatory disclaimers.
+- **Tone Analyzer**: Measures copy against enterprise rubrics (formality, confidence, technicality, empathy) and flags prohibited tones (slang, hyperbolic claims, condescending phrasing).
+- **Visual Inspector**: Computer vision inspections calculate WCAG 2.1 contrast ratios, check dominant asset colors against approved brand tokens with Delta-E tolerances, and verify logo safe-zone clearance.
 
-## Repository layout
+### 3. Pillar C · Suggest (Explainable AI Copilot)
+- **Grammarly & PR-Style Workspace**: Interactive color-coded inline text highlights:
+  - **Red**: Critical factual inaccuracies and blacklisted legal claims.
+  - **Amber**: Off-brand tone violations.
+  - **Purple**: Visual styling issues.
+- **Three Contextual Rewrite Modes**:
+  - `Strict Compliance`: Enterprise-grade accuracy citing audited SOC 2 / legal standards.
+  - `Concise`: High-impact, punchy copy tailored for character-limited ads.
+  - `Conversational`: Warm, approachable phrasing while preserving brand guardrails.
+- **Zero-Hallucination Citations**: Every finding displays its exact source document title, page number, and section name.
+- **Word-Level Diff Engine**: Side-by-side revision comparisons showing exact additions and deletions between drafts.
+
+### 4. Pillar D · Manage (Approval Workflow & Readiness Scoring)
+- **Brand Readiness Score (0–100)**: Transparent weighted penalty deductions:
+  - Factual / Legal violations: `-25.0 pts` each.
+  - Visual violations: `-12.0 pts` each.
+  - Tone violations: `-5.0 pts` each.
+- **Fast-Track Qualified Approval**: Content drafts achieving a Readiness Score of `≥ 95.0` with zero critical blockers qualify for instant automated approval.
+- **Creator Override Requests**: Creators submit formal exceptions with mandatory justification text (min 10 characters) and risk acknowledgment checkboxes.
+- **Manager Review Queue**: Reviewers inspect creator justifications alongside violation context before granting approvals or escalating to Legal Specialists.
+
+### 5. Pillar E · Track (Governance Analytics & Rule Friction Detector)
+- **Rule Friction Detection**: Identifies brand rules with high manager-approved override rates (`> 25%`). Automatically synthesizes creator justifications into actionable recommendations for Brand Admins (e.g., proposing social-media short-form disclaimer variants).
+- **Channel Drift Heatmaps**: Visualizes violation densities across Social Ads, Email Newsletters, Landing Pages, and Display Banners.
+- **Rolling Compliance Trends**: Tracks 7, 30, and 90-day organizational compliance trajectories.
+- **Cryptographic Audit Chain**: Every ingestion, scan, rewrite acceptance, override request, and approval is recorded in an append-only ledger cryptographically chained using SHA-256 hashes with real-time integrity verification.
+
+---
+
+## Role-Based Access Control (RBAC)
+
+VeriBrand AI supports five distinct enterprise governance roles:
+
+| Role | User Name | Description | Key Permissions |
+| :--- | :--- | :--- | :--- |
+| **Organization Owner** | Elena Vance | Full enterprise governance & organizational administration | All 16 capabilities |
+| **Brand Admin** | Marcus Sterling | Manages guidelines, brand brain, rules, and conflict resolution | `brand.manage`, `brain.ingest`, `rules.manage`, `audit.view` |
+| **Marketing Manager** | Sarah Jenkins | Reviews queue, decides creator overrides, approves campaigns | `override.decide`, `campaign.approve`, `campaign.publish` |
+| **Creator / Designer** | Liam Chen | Creates campaigns, reviews copilot suggestions, requests overrides | `campaign.create`, `campaign.scan`, `rewrite.accept`, `override.request` |
+| **Specialist Reviewer** | Rachel Adams | Legal and regulatory compliance escalation sign-off | `override.decide`, `campaign.escalate`, `audit.view` |
+
+Switch active roles at any time using **User Menu → Dev Mode Switch Role** or via the **Command Palette (`⌘K` / `Ctrl+K`)**.
+
+---
+
+## Repository Structure
 
 ```
 .
-├── src/                         # React 18 + TypeScript + Vite frontend
-│   ├── api/                     # types.ts (API contract), client.ts, endpoints.ts, queries.ts
-│   │   └── mocks/               # MSW mock API + deterministic seed (VITE_USE_MOCKS=true)
-│   ├── components/{ui,shared,shell}
-│   ├── features/                # dashboard, runs (wizard, live pipeline), matches, anomalies,
-│   │                            # review, rules, reports, audit, settings
-│   ├── hooks/  lib/  routes/  styles/
-│   └── test/                    # Vitest setup + unit/permission tests
-├── e2e/                         # Playwright smoke test (real backend)
-├── backend/
+├── src/                               # React 18 + TypeScript + Vite Frontend
+│   ├── api/                           # API client, endpoints, React Query hooks, and contracts
+│   ├── components/
+│   │   ├── shell/                     # AppShell, Topbar, Sidebar, CommandPalette, ShortcutsDialog
+│   │   ├── ui/                        # Radix UI primitives & design tokens
+│   │   └── shared/                    # Reusable badges, error boundaries, meters
+│   ├── features/
+│   │   ├── dashboard/                 # Executive governance center & readiness overview
+│   │   ├── campaigns/                 # Campaigns list & 4-step New Campaign Wizard
+│   │   ├── copilot/                   # Explainable Review Workspace (Pillars B & C)
+│   │   ├── queue/                     # Manager Review Queue & override decision modal
+│   │   ├── brain/                     # Brand Brain, Knowledge Stores & Conflict Detector
+│   │   ├── brands/                    # Brand directory, identities & tone rubrics
+│   │   ├── analytics/                 # Governance trends, drift heatmaps & rule friction
+│   │   ├── audit/                     # SHA-256 cryptographic audit trail & verification
+│   │   ├── settings/                  # Scoring weight policies, friction thresholds, AI config
+│   │   └── landing/                   # Public showcase landing page
+│   ├── lib/                           # Zustand store (persisted state), permissions matrix, utils
+│   └── test/                          # Vitest unit & permission matrix tests
+├── backend/                           # FastAPI Python Backend
 │   ├── app/
-│   │   ├── api/routers/         # FastAPI routers (one per resource)
-│   │   ├── schemas/             # pydantic models (camelCase wire format)
-│   │   ├── core/                # config (pydantic-settings), auth, errors, money
-│   │   ├── db/                  # SQLAlchemy models, session, init
-│   │   ├── ingest/              # PDF/CSV parsers, OCR fallback
-│   │   ├── normalize/           # vendor canonicalization, fuzzy matching, masking
-│   │   ├── matching/            # multi-pass engine, scoring, rules
-│   │   ├── detect/              # the 10 detectors + noisy-OR
-│   │   ├── agent/               # Gemini client, tools, offline fallback, rule proposals
-│   │   ├── verify/              # routing / human-review policy
-│   │   ├── reports/             # CSV + PDF (reportlab)
-│   │   ├── services/            # pipeline orchestration, runs, uploads, audit, views
-│   │   └── jobs/                # background run executor + SSE progress
-│   ├── alembic/                 # migrations
-│   ├── tests/                   # pytest: API contract + unit tests
-│   ├── scripts/seed_demo.py     # seeds the September 2026 demo data
-│   ├── Dockerfile  docker-entrypoint.sh
+│   │   ├── api/routers/               # REST routers (brands, brain, campaigns, queue, analytics, audit)
+│   │   ├── audit/                     # Fact Checker, Tone Analyzer, Visual Inspector, Orchestrator
+│   │   ├── brain/                     # Vector embeddings, RAG similarity search
+│   │   ├── copilot/                   # Rewriter engine, word-level & unified diff generator
+│   │   ├── ingest/                    # Guideline PDF parser, CSV fact parser, conflict detector
+│   │   ├── workflow/                  # State machine, override engine, SHA-256 audit logger
+│   │   ├── analytics/                 # Drift metrics aggregator & Rule Friction Detector
+│   │   ├── core/                      # Configuration (pydantic-settings), RBAC auth, uniform errors
+│   │   ├── db/                        # SQLAlchemy models, SQLite/PostgreSQL session scope
+│   │   └── schemas/                   # Pydantic v2 camelCase wire models
+│   ├── scripts/seed_demo.py           # Pre-seeds demo brands, guidelines, rules & 3 campaigns
+│   ├── tests/                         # Pytest test suite (contract, audit chain, scoring, visual)
 │   └── pyproject.toml
-├── Dockerfile.frontend  deploy/nginx.conf
-└── docker-compose.yml
+└── index.html                         # Entry point with zero-flash dark mode script
 ```
 
-## Setup
+---
 
-### Option A: Docker (recommended)
+## Quickstart & Local Setup
 
-```bash
-cp backend/.env.example backend/.env    # optional: add GEMINI_API_KEY
-docker compose up --build
-```
+### 1. Prerequisites
+- **Node.js**: v18+ (tested on Node 22 & 26)
+- **Python**: 3.12+ (managed with [uv](https://docs.astral.sh/uv/))
 
-- App: **http://localhost:5173**
-- API: **http://localhost:8000** (health at `/api/health`)
-- On first start the backend seeds a complete **September 2026** run (HDFC + ICICI vs the Tally day book)
-  into the `reconai-data` volume. Run `docker compose down -v` to reset.
-
-### Option B: Local development
-
-Backend (Python 3.12, [uv](https://docs.astral.sh/uv/)):
+### 2. Backend Setup
 
 ```bash
 cd backend
+
+# Create virtual environment and install dependencies
 uv venv --python 3.12
 uv pip install -e ".[dev]"
-cp .env.example .env                   # add GEMINI_API_KEY, or leave empty for offline mode
+
+# Configure environment variables (optional: add GEMINI_API_KEY)
+cp .env.example .env
+
+# Seed the demo data (Brand, Guidelines, Facts, Rules, and 3 Campaigns)
 .venv/bin/python -m scripts.seed_demo
-.venv/bin/uvicorn app.main:app --reload # http://localhost:8000
+
+# Start the FastAPI server on port 8000
+.venv/bin/uvicorn app.main:app --host 127.0.0.1 --port 8000 --reload
 ```
 
-PDF OCR fallback needs the `tesseract` binary (`brew install tesseract` / `apt install tesseract-ocr`).
+- **Health check**: [http://localhost:8000/api/health](http://localhost:8000/api/health)
+- **OpenAPI interactive docs**: [http://localhost:8000/api/docs](http://localhost:8000/api/docs)
 
-Frontend (Node 18+, tested on Node 22/26):
+### 3. Frontend Setup
+
+In a separate terminal:
 
 ```bash
+# Install dependencies
 npm ci
-VITE_API_BASE_URL=http://localhost:8000 VITE_USE_MOCKS=false npm run dev   # http://localhost:5173
+
+# Start the Vite development server on port 5173
+npm run dev
 ```
 
-### Option C: Mock-only frontend (no backend)
+- **Frontend App**: [http://localhost:5173](http://localhost:5173)
 
+---
+
+## Guided Interactive Demo Tour
+
+1. **Executive Dashboard (`/`)**:
+   - View the aggregate **Brand Readiness Index (88.5/100)**, audited assets count, and pending manager reviews.
+   - Inspect the **Rule Friction Alert Banner** highlighting rules with high override frequencies.
+
+2. **Interactive Review Workspace (`/campaigns/CAMP-DEMO-01`)**:
+   - Inspect the live campaign with intentional test violations:
+     - Outdated price: `"$39"` (Active price: `"$149/mo"`).
+     - Prohibited claim: `"100% unhackable"`.
+     - Deprecated product name: `"Acme Cloud Legacy"`.
+     - Tone violation: `"Yo check this out!"` (Colloquial slang).
+     - Visual violation: Unapproved orange palette.
+   - Click any highlighted phrase to jump to its explainable citation card with verified source document citations.
+   - Toggle between **Strict Compliance**, **Concise**, and **Conversational** rewrite modes, then click **Accept Rewrite** to update copy and generate an immutable Revision v2.
+   - Click **Compare Diff** to see word-level red/green diff highlights.
+
+3. **Manager Approval Queue (`/queue`)**:
+   - Switch role to **Marketing Manager** via the Topbar user menu.
+   - Inspect creator override requests with attached creator justifications.
+   - Click **Approve** or **Reject** with optional decision notes.
+
+4. **Brand Brain & Knowledge Ingestion (`/brain`)**:
+   - Explore the three knowledge stores: Rules Registry, Fact Registry, and Visual Asset Registry.
+   - Inspect detected **Cross-Document Rule Conflicts**.
+   - Test the Vector Store semantic search by querying phrases like `"logo clear space"` or `"uptime guarantees"`.
+
+5. **Governance Analytics (`/analytics`)**:
+   - Analyze compliance readiness trends across 7d, 30d, and 90d intervals.
+   - Review the **Brand Drift Heatmap** breaking down violations by channel and category.
+   - Inspect the **Rule Friction Detector** recommendations synthesized from creator justifications.
+
+6. **Cryptographic Audit Log (`/audit`)**:
+   - View the append-only event stream (actor, role, action, target, before/after states, and SHA-256 hashes).
+   - Click **Verify Hash Integrity** to mathematically validate the hash chain end-to-end.
+
+---
+
+## Running Tests
+
+### Backend Unit & Integration Tests
 ```bash
-VITE_USE_MOCKS=true npm run dev
+cd backend
+.venv/bin/pytest tests
 ```
 
-The MSW mock API runs in the browser with 12 months of seeded runs, realistic latency and a 2% random
-503 rate (configurable under **Settings → Developer**). Reloading the page resets the mock data.
-
-## Configuration
-
-Backend settings are read only from the environment or `backend/.env` (pydantic-settings).
-
-| Variable          | Default                       | Description |
-| ----------------- | ----------------------------- | ----------- |
-| `GEMINI_API_KEY`  | *(empty)*                     | Google AI Studio key. Empty = fully offline (deterministic template explanations). |
-| `DATABASE_URL`    | `sqlite:///./reconai.db`      | SQLAlchemy URL. Postgres also works: `postgresql://user:pass@host:5432/reconai`. Docker: `sqlite:////data/reconai.db`. |
-| `CORS_ORIGINS`    | `http://localhost:5173`       | Comma-separated list of allowed browser origins. |
-| `AUTH_MODE`       | `demo`                        | `demo` = role from the `X-Demo-Role` header (dev role switcher). `jwt` = HS256 bearer tokens. |
-| `JWT_SECRET`      | *(unset)*                     | HS256 secret, required when `AUTH_MODE=jwt`. |
-| `PUBLIC_BASE_URL` | `http://localhost:8000`       | Used to build report share links. |
-| `DATA_DIR`        | `backend/data`                | Uploads and generated files (`/data` in Docker). |
-
-Frontend variables are build-time and inlined by Vite (see `.env.example`):
-
-| Variable            | Default                 | Description |
-| ------------------- | ----------------------- | ----------- |
-| `VITE_API_BASE_URL` | `http://localhost:8000` | Backend origin. Requests go to `${VITE_API_BASE_URL}/api/...`. Empty = same-origin `/api`. |
-| `VITE_USE_MOCKS`    | `false`                 | `true` starts the in-browser MSW mock API instead of calling the backend. |
-
-## 3-minute demo script
-
-1. **Dashboard.** Stat cards, the 12-month auto-match trend, anomalies by category and the "Needs your attention" list.
-2. **Runs → September 2026.** The summary strip shows the integrity check (*Unexplained* stays red until
-   resolved), along with the waterfall and the Matched / Unmatched / Anomalies / Rules / Activity tabs.
-3. **Live pipeline.** Go to **Runs → New reconciliation → Use sample files**. The HDFC PDF, ICICI CSV and Tally
-   day book are uploaded and parsed, and the balance sanity check runs. Click **Continue** through mapping
-   and rules, then **Start run** to watch Ingest → Normalize → Match → Detect → AI Investigate → Verify
-   stream live over SSE.
-4. **Matched / Unmatched.** Pass labels P1–P4 appear on each pair. You can drag a bank row onto a ledger row
-   (or select one of each and press **M**) to create a manual match.
-5. **Potential fraud.** Open the ₹49,900 payment to a 3-day-old vendor, just under the ₹50,000 approval limit.
-   It shows the detector signals with the noisy-OR breakdown, the AI explanation with its evidence and agent
-   trace (tool calls), and the model/version.
-6. **Re-run with relaxed tolerances** (₹5,000). The amount mismatches match automatically as "P5 · Relaxed re-run".
-7. **Review queue.** Select the low-risk items and **Approve selected**. Fraud and high-value items are never
-   bulk-approvable. You can also try **Focus mode** (A / R / E, J / K).
-8. **Rules.** Approve an AI-proposed rule. Under **Detectors**, change a threshold and use **Test** for a
-   dry-run impact preview on the run.
-9. **Finalize.** Decide the remaining items (notes are required for fraud and high-value items). *Unexplained*
-   reaches **₹0.00**, and **Finalize run** locks the run.
-10. **Reports.** Generate the anomaly investigation report as a PDF and copy the share link.
-11. **Audit log.** Every system, AI and human action is listed with before/after values.
-12. **Role switcher.** Use **User menu → Dev mode · switch role**. As Auditor or Reviewer, actions are hidden or
-    disabled in the UI, and the API returns 403.
-
-## Switching to JWT auth
-
-Set the following in `backend/.env`:
-
+### Frontend Typechecking & Unit Tests
 ```bash
-AUTH_MODE=jwt
-JWT_SECRET=change-me-to-a-long-random-string
-```
-
-The backend then ignores `X-Demo-Role` and verifies an `Authorization: Bearer <token>` header. The token
-must be HS256-signed with claims `{ "sub", "name", "role": "admin" | "accountant" | "reviewer" | "auditor", "exp" }`.
-
-Mint a test token with only the standard library:
-
-```bash
-JWT_SECRET=change-me-to-a-long-random-string python3 -c '
-import base64, hashlib, hmac, json, os, time
-b = lambda d: base64.urlsafe_b64encode(d).rstrip(b"=").decode()
-h = b(json.dumps({"alg": "HS256", "typ": "JWT"}).encode())
-p = b(json.dumps({"sub": "u_1", "name": "Priya Sharma", "role": "accountant", "exp": int(time.time()) + 8 * 3600}).encode())
-s = b(hmac.new(os.environ["JWT_SECRET"].encode(), f"{h}.{p}".encode(), hashlib.sha256).digest())
-print(f"{h}.{p}.{s}")'
-```
-
-```bash
-curl -H "Authorization: Bearer $TOKEN" http://localhost:8000/api/runs
-```
-
-The frontend's demo role switcher only sends `X-Demo-Role`. To use JWT from the browser, add the bearer
-header in `src/api/client.ts` (the `headers` object in `request()` and the `fetch` in `streamEvents()`),
-e.g. `Authorization: \`Bearer ${token}\``, where `token` comes from your login flow or SSO.
-
-## API contract
-
-All types live in [`src/api/types.ts`](src/api/types.ts), which is shared with the backend's pydantic schemas.
-
-| Method & path                         | Request                         | Response                                   |
-| ------------------------------------- | ------------------------------- | ------------------------------------------ |
-| `GET  /api/health`                    | —                               | 200 when the API and DB are up             |
-| `GET  /api/samples` / `GET /api/samples/:name` | —                      | `{ name, kind, accountId? }[]` / file bytes (demo sample files) |
-| `POST /api/uploads`                   | multipart: `file`, `kind`, `accountId?` | `UploadedFile` (parse status, preview rows, sanity check, warnings) |
-| `POST /api/uploads/:id/ocr`           | —                               | `UploadedFile`                             |
-| `GET  /api/runs`                      | —                               | `Run[]`                                    |
-| `POST /api/runs`                      | `CreateRunRequest`              | `Run` (status `running`)                   |
-| `GET  /api/runs/:id`                  | —                               | `Run` (stats, stages, review progress)     |
-| `GET  /api/runs/:id/events`           | —                               | **SSE** (see below)                        |
-| `GET  /api/runs/:id/matches`          | —                               | `MatchPairView[]`                          |
-| `GET  /api/runs/:id/unmatched`        | —                               | `{ bank: UnmatchedItem[], ledger: UnmatchedItem[] }` |
-| `GET  /api/runs/:id/findings`         | —                               | `FindingView[]`                            |
-| `GET  /api/runs/:id/activity`         | —                               | `{ events: RunEvent[], audit: AuditEntry[] }` |
-| `POST /api/runs/:id/rerun`            | `RerunRequest`                  | `{ matchesGained, pairIds }`               |
-| `POST /api/runs/:id/finalize`         | —                               | `Run` (409 if reviews are open)            |
-| `GET  /api/findings/:id`              | —                               | `FindingDetail` (evidence, vendor history, comments, history, impact) |
-| `POST /api/findings/:id/decision`     | `DecisionRequest`               | `FindingDetail` (422 if notes/reason missing) |
-| `POST /api/findings/bulk-decision`    | `{ ids, action: "approve" }`    | `{ updated }` (never applies to fraud)     |
-| `POST /api/findings/:id/comments`     | `{ body }`                      | `Comment`                                  |
-| `POST /api/matches/manual`            | `{ runId, bankTxnIds, ledgerTxnIds, note }` | `MatchPair`                    |
-| `POST /api/matches/:id/unmatch`       | `{ runId, reason }`             | `{ ok: true }`                             |
-| `GET  /api/review-queue`              | —                               | `ReviewItem[]` (priority = risk × log amount) |
-| `GET  /api/rules`                     | —                               | `RulesResponse` (active, proposed, detectors, versions) |
-| `POST /api/rules/:id/decision`        | `{ action: approve \| edit_approve \| reject, params?, reason? }` | `ProposedRule` |
-| `PUT  /api/rules/:id`                 | `Partial<Rule>` (e.g. `enabled`) | `Rule`                                    |
-| `PUT  /api/detectors/:id`             | `Partial<Detector>`             | `Detector`                                 |
-| `POST /api/detectors/:id/test`        | `{ runId, threshold, weight, enabled }` | impact preview                     |
-| `GET  /api/reports` / `POST /api/reports` | `ReportRequest`             | `Report[]` / `Report`                      |
-| `GET  /api/reports/:id/download`      | —                               | `Report` with `content` (CSV text or base64 PDF) |
-| `GET  /api/audit`                     | query: `actor`, `q`, `from`, `to`, `runId` | `AuditEntry[]`                  |
-| `GET  /api/settings` / `PUT /api/settings` | `Partial<Settings>`        | `Settings`                                 |
-| `GET  /api/dashboard`                 | —                               | `DashboardData`                            |
-| `GET  /api/search?q=`                 | —                               | `SearchResult` (runs, txns, vendors)       |
-
-**Wire-format rules**
-
-- JSON keys are **camelCase**.
-- Money is a signed **decimal string with 2 decimal places** (`"-49900.00"`, where negative means money leaving
-  the account). It is never a float. The frontend uses big.js and the backend uses `Decimal`.
-- Dates are ISO `yyyy-MM-dd`. Timestamps are ISO 8601 UTC.
-- Errors are JSON `{ "error": string, "detail"?: string }` with a 4xx/5xx status. The client does not retry
-  4xx and retries 5xx once.
-- **Progress stream:** `GET /api/runs/:id/events` returns `text/event-stream`. The frontend reads it with
-  `fetch`, and falls back to polling `GET /api/runs/:id` every 2 s if the stream fails.
-
-  ```
-  event: log      data: RunEvent
-  event: stages   data: { "status": RunStatus, "stages": RunStage[] }
-  event: done     data: {}
-  ```
-
-- **Integrity rule:** `bankTotal − ledgerTotal = explained + unexplained`. Finalize is refused (409) while
-  any finding is `open`, `in_review` or `escalated`.
-
-## Testing
-
-```bash
-# Backend: API contract + unit tests (matching, detectors, money, routing, auth)
-cd backend && .venv/bin/pytest
-
-# Frontend: Vitest + React Testing Library (runs against the MSW handlers)
-npm test
 npm run typecheck
-
-# End-to-end: Playwright against a running stack (backend :8000, frontend :5173)
-npm run e2e:install        # one-time: downloads Chromium
-npm run e2e                # or E2E_BASE_URL=http://localhost:5173 E2E_API_URL=http://localhost:8000 npm run e2e
-E2E_WEB_SERVER=1 npm run e2e   # let Playwright start the Vite dev server itself
+npm test
 ```
-
-The e2e smoke test (`e2e/smoke.spec.ts`) runs the whole flow. It uploads the sample files through the
-wizard, watches the live pipeline, bulk-approves the low-risk findings, decides the fraud and high-value
-ones with notes, finalizes the run (with unexplained at ₹0.00) and generates a report. The test skips
-itself if `/api/health` is unreachable.
-
-Frontend unit tests include money formatting (Indian/international grouping, big.js arithmetic), risk
-thresholds and noisy-OR, the finding decision flow (required notes, optimistic rollback), manual matching,
-the full role × permission matrix, and role-gated rendering.
-
-## Security
-
-- **Never commit `.env` files.** `.gitignore` and `.dockerignore` exclude them. Only the `*.env.example` files are tracked.
-- **Rotate any API key that has been pasted** into a chat, ticket, prompt, screenshot or log, even if it
-  was only pasted once.
-- The Gemini key is read only through pydantic-settings as a `SecretStr`. It is never logged, never
-  returned by any endpoint and never sent to the frontend.
-- Account numbers are **masked before any LLM call** (on by default, configurable per run).
-- The LLM never decides what is true. Matching, totals and the integrity check are deterministic, and AI
-  output is advisory, schema-validated and tied to evidence.
-- The audit log is **append-only with a hash chain**. Each entry stores the hash of the previous one, so
-  tampering can be detected.
-- `AUTH_MODE=demo` trusts the `X-Demo-Role` header and is for demos only. Use `AUTH_MODE=jwt` anywhere else.
-
-## Frontend notes
-
-React 18 · TypeScript (strict) · Vite · Tailwind + shadcn-style components on Radix · React Router v6 ·
-TanStack Query/Table/Virtual · Zustand · Recharts · react-hook-form + zod · big.js · MSW 2 · Vitest + RTL · Playwright.
-
-- **Design system:** dark-first with a working light theme. Tokens are in `src/styles/globals.css`:
-  `sys` (cyan, matched/system), `attn` (orange, unmatched), `crit` (red, fraud/critical), `warn` (amber, timing),
-  `ai` (violet, always with ✦ AI) and `ok` (green, approved). Inter is used for UI text and JetBrains Mono for
-  amounts and IDs.
-- **Money display:** monospace and right-aligned, with Indian (`₹1,24,500.00`) or international grouping.
-  Debits are red with a `−` and credits are green. Each value has an accessible label ("debit of ₹…").
-- **Accessibility:** the app is keyboard-complete (**⌘K** command palette, **?** for shortcuts). It uses Radix
-  dialogs and menus, `role="meter"` for risk and confidence, and charts with text summaries, and colour is
-  never the only signal.
-- **Roles:** Admin / Accountant / Reviewer / Auditor. The permission matrix is in `src/lib/permissions.ts`,
-  mirrored in `backend/app/core/auth.py`.
-
-## Verification status
-
-| Check | Result |
-| --- | --- |
-| Backend tests (`cd backend && .venv/bin/python -m pytest`) | 332 passed: API contract (shapes vs `types.ts`, 2-dp money, `{error, detail}` errors, LF-only SSE frames, role permissions), reports, fuzzy/scorePair parity with the TypeScript sources, risk, matching, parsers |
-| Frontend (`npm run typecheck && npm test && npm run build`) | typecheck clean, 94 Vitest tests passed, build OK |
-| Unexplained → ₹0.00 after full resolution | verified by the contract test, and by the seed (Apr–Aug 2026 finalize at ₹0.00) |
-| Works with `GEMINI_API_KEY` unset | yes; the contract suite runs with the key blank (deterministic template explanations) |
-| Live app against the real API (no MSW) | verified in a browser: dashboard, runs, run detail + waterfall, findings drawer, new-run wizard with sample files → live SSE pipeline → awaiting review, review queue, rules, audit, settings |
-| Playwright smoke test (`npm run e2e`) | written, **not executed**: the Chromium download failed in this environment (`npm run e2e:install` first) |
-
-## Known limitations
-
-- **Gemini:** the key used during development was blocked by Google (`403 API_KEY_SERVICE_BLOCKED`). The live agent path (function calling + structured output) is implemented but was only exercised up to the point where the API rejected the key, at which point the pipeline fell back to the deterministic explanations as designed. In offline mode explanation confidence is capped at 0.6, so every finding routes to human review ("Low AI confidence") unless an approved rule classifies it.
-- **Not implemented:** batching of several small items into one LLM call (items are investigated individually, concurrency 2, with a case-file cache).
-- **Stricter than the mock:** finalize also returns 409 while the unexplained difference is non-zero (for example after a rejected finding), so a finalized run is always ₹0.00.
-- **Column mappings:** the wizard keys `columnMapping` by a client-side file id rather than the upload id. The backend accepts either, matching a mapping to an upload by its column headers.
-
-- The Gemini key in this environment was blocked (`API_KEY_SERVICE_BLOCKED`), so the app was verified in offline fallback mode.
-- The API ledger connector is not implemented. The ledger can only be loaded from a CSV.
-- OCR requires the `tesseract` binary (included in the Docker image).
-- XLSX export isn't offered (CSV/PDF only).
-- Multi-org data is out of scope, and the org switcher is a placeholder.

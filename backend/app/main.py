@@ -18,7 +18,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
 from sqlalchemy import select
 
-from app.api.routers import analytics, audit, brain, brands, campaigns, queue
+from app.api.routers import admin, analytics, audit, brain, brands, campaigns, queue
 from app.core.config import get_settings
 from app.core.errors import install_error_handlers
 from app.db.init import init_db
@@ -73,6 +73,7 @@ def create_app() -> FastAPI:
 
     # Register Routers
     for r in (
+        admin.router,
         brands.router,
         brain.router,
         campaigns.router,

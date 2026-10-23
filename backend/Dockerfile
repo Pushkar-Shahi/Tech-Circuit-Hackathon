@@ -1,4 +1,4 @@
-# ReconAI backend — FastAPI + pdfplumber + Tesseract OCR fallback.
+# VeriBrand AI backend — FastAPI + pdfplumber + Tesseract OCR fallback.
 FROM python:3.12-slim
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
@@ -24,9 +24,9 @@ COPY . .
 
 RUN chmod +x /app/docker-entrypoint.sh \
     && mkdir -p /data \
-    && useradd --create-home --uid 10001 reconai \
-    && chown -R reconai:reconai /app /data
-USER reconai
+    && useradd --create-home --uid 10001 veribrand \
+    && chown -R veribrand:veribrand /app /data
+USER veribrand
 
 EXPOSE 8000
 VOLUME ["/data"]

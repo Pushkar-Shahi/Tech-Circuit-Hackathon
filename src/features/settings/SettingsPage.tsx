@@ -18,6 +18,8 @@ import {
   Zap,
 } from "lucide-react";
 import { toast } from "sonner";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { api } from "@/api/endpoints";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { useUiStore } from "@/lib/store";
@@ -60,6 +62,7 @@ const SECTIONS = [
   { id: "ai", label: "AI & Vision Engines", icon: Brain },
   { id: "roles", label: "RBAC & Permissions", icon: Users },
   { id: "appearance", label: "Preferences", icon: Settings },
+  { id: "developer", label: "Developer Mode", icon: Zap },
 ] as const;
 
 type SectionId = (typeof SECTIONS)[number]["id"];
@@ -77,6 +80,24 @@ export default function SettingsPage() {
   const currentRole = useUiStore((s) => s.role);
   const setRole = useUiStore((s) => s.set);
   const theme = useUiStore((s) => s.theme);
+
+  const queryClient = useQueryClient();
+
+  const resetMutation = useMutation({
+    mutationFn: () => api.admin.resetDemo(),
+    onSuccess: (data) => {
+      queryClient.invalidateQueries({ queryKey: ["campaigns"] });
+      queryClient.invalidateQueries({ queryKey: ["brands"] });
+      queryClient.invalidateQueries({ queryKey: ["analytics"] });
+      queryClient.invalidateQueries({ queryKey: ["queue"] });
+      toast.success("Demo State Reset", {
+        description: data.message || "Acme Cloud Enterprise dataset repopulated to clean initial state.",
+      });
+    },
+    onError: (err: any) => {
+      toast.error("Failed to reset demo: " + (err.message || "Unknown error"));
+    },
+  });
 
   const handleSave = () => {
     localStorage.setItem("veribrand_governance_config", JSON.stringify(config));
@@ -646,6 +667,46 @@ export default function SettingsPage() {
                     </button>
                   </div>
                 </div>
+              </CardContent>
+            </Card>
+          )}
+
+          {/* 6. DEVELOPER MODE */}
+          {activeSection === "developer" && (
+            <Card className="border-destructive/40 bg-destructive/5">
+              <CardHeader>
+                <CardTitle className="text-base flex items-center gap-2 text-destructive">
+                  <RotateCcw className="h-4 w-4" />
+                  Hackathon Demo State Management
+                </CardTitle>
+                <CardDescription>
+                  Instantly restore clean demo state without restarting containers. Useful during live judging rounds.
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div className="rounded-lg border bg-surface p-4 text-sm space-y-2">
+                  <p className="font-semibold text-foreground">
+                    Reset actions performed:
+                  </p>
+                  <ul className="list-disc pl-5 text-xs text-muted-foreground space-y-1">
+                    <li>Clears mutated campaigns, accepted rewrites, and reviewer decisions.</li>
+                    <li>Re-seeds <code>CAMP-DEMO-01</code> to its unreviewed initial state with active violations.</li>
+                    <li>Restores Brand Brain fact registries, approved visual tokens, and vector chunks.</li>
+                    <li>Re-seeds clean manager review queues and SHA-256 audit log chains.</li>
+                    <li>Invalidates TanStack query cache across campaigns, brands, analytics, and queues.</li>
+                  </ul>
+                </div>
+
+                <Button
+                  variant="destructive"
+                  size="lg"
+                  disabled={resetMutation.isPending}
+                  onClick={() => resetMutation.mutate()}
+                  className="font-bold shadow-md"
+                >
+                  <RotateCcw className={cn("mr-2 h-4 w-4", resetMutation.isPending && "animate-spin")} />
+                  {resetMutation.isPending ? "Resetting Demo State..." : "Reset Demo Data to Initial State"}
+                </Button>
               </CardContent>
             </Card>
           )}

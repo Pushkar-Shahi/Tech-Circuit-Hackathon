@@ -66,6 +66,22 @@ async def upload_knowledge_document(
     created_facts_count = 0
     created_chunks_count = 0
 
+    # Create parent doc_row first so foreign keys in chunks and facts succeed
+    doc_row = KnowledgeDocRow(
+        id=file_id,
+        brand_id=brand_id,
+        title=title,
+        document_type=document_type,
+        file_path=str(file_path),
+        file_size=file_size,
+        mime_type=mime_type,
+        status="parsed",
+        extracted_metadata=extracted_metadata,
+        created_at=utcnow(),
+    )
+    db.add(doc_row)
+    db.flush()
+
     # Parse according to document type
     if file_path.suffix.lower() == ".pdf":
         pdf_res = extract_pdf_content(file_path)
@@ -114,19 +130,7 @@ async def upload_knowledge_document(
                 db.add(fact)
                 created_facts_count += 1
 
-    doc_row = KnowledgeDocRow(
-        id=file_id,
-        brand_id=brand_id,
-        title=title,
-        document_type=document_type,
-        file_path=str(file_path),
-        file_size=file_size,
-        mime_type=mime_type,
-        status="parsed",
-        extracted_metadata=extracted_metadata,
-        created_at=utcnow(),
-    )
-    db.add(doc_row)
+    doc_row.extracted_metadata = extracted_metadata
     db.commit()
 
     # Re-compile rules and detect cross-document conflicts

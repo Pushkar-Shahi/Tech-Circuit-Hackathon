@@ -1,4 +1,4 @@
-# ReconAI frontend — build the Vite SPA, serve it with nginx.
+# VeriBrand AI frontend — build the Vite SPA, serve it with nginx.
 
 # ---- build ----
 FROM node:22-alpine AS build

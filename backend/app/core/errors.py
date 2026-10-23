@@ -7,7 +7,7 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
-log = logging.getLogger("reconai")
+log = logging.getLogger("veribrand")
 
 _STATUS_CODES = {
     400: "bad_request",

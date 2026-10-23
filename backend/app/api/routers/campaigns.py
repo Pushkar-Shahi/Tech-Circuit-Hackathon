@@ -4,9 +4,10 @@ from __future__ import annotations
 
 import logging
 import uuid
+from pathlib import Path
 from typing import Any
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, File, Query, UploadFile
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -14,6 +15,7 @@ from app.audit.orchestrator import run_multimodal_audit
 from app.copilot.diff_engine import compute_unified_diff, compute_word_diff
 from app.copilot.rewriter import apply_rewrite
 from app.core.auth import User, current_user, require
+from app.core.config import get_settings
 from app.core.errors import ApiError
 from app.db.models import (
     AuditFindingRow,
@@ -126,6 +128,7 @@ def create_campaign(
         updated_at=utcnow(),
     )
     db.add(campaign)
+    db.flush()
 
     # Revision v1
     rev_id = f"REV-{uuid.uuid4().hex[:8].upper()}"
@@ -204,7 +207,7 @@ async def scan_campaign(
     return result
 
 
-@router.post("/{campaign_id}/rewrites/accept")
+@router.post("/{campaign_id}/rewrites/accept", response_model=Campaign)
 def accept_rewrite_route(
     campaign_id: str,
     payload: AcceptRewriteRequest,
@@ -242,7 +245,7 @@ def request_override_route(
     return {"status": "submitted", "overrideId": override.id}
 
 
-@router.post("/{campaign_id}/transition")
+@router.post("/{campaign_id}/transition", response_model=Campaign)
 def transition_campaign(
     campaign_id: str,
     payload: WorkflowTransitionRequest,
@@ -331,3 +334,51 @@ def add_comment(
     db.commit()
     db.refresh(comment)
     return comment
+
+
+@router.post("/{campaign_id}/assets")
+async def upload_campaign_asset(
+    campaign_id: str,
+    file: UploadFile = File(...),
+    user: User = Depends(require("campaign.edit")),
+    db: Session = Depends(get_db),
+):
+    """Upload visual asset for a campaign, save to settings.data_dir / 'uploads', and attach exact path to revision."""
+    campaign = db.get(CampaignRow, campaign_id)
+    if not campaign:
+        raise ApiError(404, "not_found", f"Campaign {campaign_id} not found")
+
+    settings = get_settings()
+    uploads_dir = settings.data_dir / "uploads"
+    uploads_dir.mkdir(parents=True, exist_ok=True)
+
+    file_ext = Path(file.filename or "asset.png").suffix or ".png"
+    safe_name = f"{campaign_id}_{uuid.uuid4().hex[:8]}{file_ext}"
+    dest_path = uploads_dir / safe_name
+
+    content = await file.read()
+    dest_path.write_bytes(content)
+    readable_path = str(dest_path.resolve())
+
+    latest_rev = (
+        db.execute(
+            select(CampaignRevisionRow)
+            .where(CampaignRevisionRow.campaign_id == campaign_id)
+            .order_by(CampaignRevisionRow.revision_number.desc())
+            .limit(1)
+        ).scalar_one_or_none()
+    )
+    if latest_rev:
+        urls = list(latest_rev.asset_urls or [])
+        urls.append(readable_path)
+        latest_rev.asset_urls = urls
+        db.commit()
+        db.refresh(latest_rev)
+
+    return {
+        "status": "uploaded",
+        "filename": safe_name,
+        "path": readable_path,
+        "campaignId": campaign_id,
+    }
+

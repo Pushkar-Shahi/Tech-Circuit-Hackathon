@@ -558,7 +558,7 @@ export default function ReviewWorkspacePage() {
                     {/* Source Citation & Preview Link */}
                     <div className="flex items-center justify-between rounded-lg bg-background/60 px-2.5 py-1.5 text-2xs text-muted-foreground">
                       <span className="truncate">
-                        📖 {finding.sourceCitation.documentTitle ?? "Brand Guidelines"} · p.{finding.sourceCitation.page ?? 1}
+                        📖 {finding.sourceCitation?.documentTitle ?? "Brand Guidelines"} · p.{finding.sourceCitation?.page ?? 1}
                       </span>
                       <button
                         type="button"
@@ -767,14 +767,14 @@ export default function ReviewWorkspacePage() {
               Source Guideline Reference
             </DialogTitle>
             <DialogDescription>
-              {sourcePreviewModal?.sourceCitation.documentTitle ?? "Brand Document"} · Page{" "}
-              {sourcePreviewModal?.sourceCitation.page ?? 1}
+              {sourcePreviewModal?.sourceCitation?.documentTitle ?? "Brand Document"} · Page{" "}
+              {sourcePreviewModal?.sourceCitation?.page ?? 1}
             </DialogDescription>
           </DialogHeader>
 
           <div className="space-y-3 py-2">
             <div className="rounded-lg bg-surface-2 p-3 text-xs space-y-2">
-              <div className="font-semibold text-foreground">Section: {sourcePreviewModal?.sourceCitation.section}</div>
+              <div className="font-semibold text-foreground">Section: {sourcePreviewModal?.sourceCitation?.section ?? "Guidelines"}</div>
               <div className="text-muted-foreground border-l-2 border-sys pl-2.5 italic">
                 "{sourcePreviewModal?.evidence}"
               </div>

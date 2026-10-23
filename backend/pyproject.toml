@@ -1,7 +1,7 @@
 [project]
-name = "reconai-backend"
+name = "veribrand-backend"
 version = "0.1.0"
-description = "ReconAI — automated bank reconciliation & anomaly investigation API"
+description = "VeriBrand AI — Autonomous Brand Governance & Multimodal Compliance Platform"
 requires-python = ">=3.12"
 dependencies = [
     "fastapi>=0.115",

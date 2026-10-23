@@ -1,4 +1,4 @@
-# ReconAI — `docker compose up` → app http://localhost:5173, API http://localhost:8000
+# VeriBrand AI — `docker compose up` → app http://localhost:5173, API http://localhost:8000
 services:
   backend:
     build: ./backend
@@ -8,12 +8,12 @@ services:
       - path: backend/.env
         required: false
     environment:
-      DATABASE_URL: sqlite:////data/reconai.db
+      DATABASE_URL: sqlite:////data/veribrand.db
       DATA_DIR: /data
       CORS_ORIGINS: http://localhost:5173,http://localhost:8080
       PUBLIC_BASE_URL: http://localhost:8000
     volumes:
-      - reconai-data:/data
+      - veribrand-data:/data
     healthcheck:
       test: ["CMD", "curl", "-fsS", "http://localhost:8000/api/health"]
       interval: 10s
@@ -37,4 +37,4 @@ services:
     restart: unless-stopped
 
 volumes:
-  reconai-data:
+  veribrand-data:

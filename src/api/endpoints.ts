@@ -104,4 +104,12 @@ export const api = {
     },
     verify: () => get<{ valid: boolean; count: number; message: string; brokenAtSeq?: number }>("/audit/verify"),
   },
+
+  // Admin & System
+  admin: {
+    resetDemo: () => post<{ status: string; message: string }>("/admin/reset-demo"),
+  },
+  system: {
+    health: () => get<{ status: string; service: string; version: string; aiConfigured: boolean }>("/health"),
+  },
 };

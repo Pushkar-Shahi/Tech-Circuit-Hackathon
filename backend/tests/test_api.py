@@ -70,3 +70,79 @@ def test_queue_endpoint(client, auth_headers):
     assert isinstance(queue, dict)
     assert "pendingCampaigns" in queue
     assert "pendingOverrides" in queue
+
+
+def test_campaign_lifecycle_and_rewrites(client, auth_headers):
+    # 1. Create a campaign
+    create_resp = client.post(
+        "/api/campaigns",
+        headers=auth_headers,
+        json={
+            "brand_id": "BRAND-ACME-01",
+            "name": "Integration Test Campaign",
+            "channel": "social_ad",
+            "department": "Growth",
+            "region": "Global",
+            "agency": "In-house",
+            "target_audience": "Enterprise CIOs",
+            "content_text": "Yo check this out! Acme Cloud Legacy is $39 and 100% unhackable!!",
+            "asset_urls": ["/sample_creative_orange.png"],
+        },
+    )
+    assert create_resp.status_code == 200
+    camp = create_resp.json()
+    cid = camp["id"]
+    assert cid.startswith("CAMP-")
+
+    # 2. Multimodal Scan
+    scan_resp = client.post(f"/api/campaigns/{cid}/scan", headers=auth_headers)
+    assert scan_resp.status_code == 200
+    scan_data = scan_resp.json()
+    assert scan_data["findingsCount"] >= 5
+
+    # 3. Fetch Campaign Details
+    get_resp = client.get(f"/api/campaigns/{cid}", headers=auth_headers)
+    assert get_resp.status_code == 200
+    camp_detail = get_resp.json()
+    findings = camp_detail["findings"]
+    assert len(findings) >= 5
+
+    # 4. Accept AI rewrite on first finding
+    f0 = findings[0]
+    rewrite_resp = client.post(
+        f"/api/campaigns/{cid}/rewrites/accept",
+        headers=auth_headers,
+        json={"finding_id": f0["id"], "rewrite_mode": "strict_compliance"},
+    )
+    assert rewrite_resp.status_code == 200
+    revised_camp = rewrite_resp.json()
+    assert revised_camp["latestRevision"]["revisionNumber"] == 2
+
+    # 5. Diff between v1 and v2
+    diff_resp = client.get(f"/api/campaigns/{cid}/diff?rev_a=1&rev_b=2", headers=auth_headers)
+    assert diff_resp.status_code == 200
+    diff_data = diff_resp.json()
+    assert "wordDiff" in diff_data
+    assert len(diff_data["wordDiff"]) > 0
+
+    # 6. Override request on another finding
+    creator_headers = {"x-demo-role": "creator"}
+    f1 = findings[1]
+    ovr_resp = client.post(
+        f"/api/campaigns/{cid}/override",
+        headers=creator_headers,
+        json={"finding_id": f1["id"], "justification": "Approved partner exception with business clearance"},
+    )
+    assert ovr_resp.status_code == 200
+    ovr_id = ovr_resp.json()["overrideId"]
+
+    # 7. Decide override in queue as manager
+    manager_headers = {"x-demo-role": "manager"}
+    dec_resp = client.post(
+        f"/api/queue/overrides/{ovr_id}/decide",
+        headers=manager_headers,
+        json={"approve": True, "decision_note": "Verified with VP of Marketing"},
+    )
+    assert dec_resp.status_code == 200
+    assert dec_resp.json()["status"] == "approved"
+

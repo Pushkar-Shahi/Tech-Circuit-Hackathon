@@ -12,7 +12,7 @@ _factory: sessionmaker[Session] | None = None
 
 
 def _resolve_sqlite(url: str) -> str:
-    """Relative SQLite paths (sqlite:///./reconai.db) resolve against backend/, not the process cwd."""
+    """Relative SQLite paths (sqlite:///./veribrand.db) resolve against backend/, not the process cwd."""
     from app.core.config import BACKEND_DIR
 
     prefix = "sqlite:///"

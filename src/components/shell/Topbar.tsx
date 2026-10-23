@@ -11,10 +11,12 @@ import {
   DropdownMenuTrigger,
   Tip,
 } from "@/components/ui/menus";
+import { useQuery } from "@tanstack/react-query";
+import { api } from "@/api/endpoints";
 import { KeyboardHint } from "@/components/shared/misc";
 import { useUiStore, type Theme } from "@/lib/store";
 import { ROLES, type Role } from "@/lib/permissions";
-import { isMac } from "@/lib/utils";
+import { cn, isMac } from "@/lib/utils";
 import { toast } from "sonner";
 
 const ORGS = [
@@ -30,6 +32,13 @@ export function Topbar() {
   const org = ORGS.find((o) => o.id === orgId) ?? ORGS[0];
 
   const currentRoleObj = ROLES.find((r) => r.id === role) ?? ROLES[1];
+
+  const { data: health } = useQuery({
+    queryKey: ["health"],
+    queryFn: () => api.system.health(),
+    refetchInterval: 30000,
+  });
+  const aiConfigured = health?.aiConfigured ?? false;
 
   const nextTheme: Record<Theme, Theme> = { dark: "light", light: "system", system: "dark" };
   const ThemeIcon = theme === "dark" ? Moon : theme === "light" ? Sun : Laptop;
@@ -53,6 +62,38 @@ export function Topbar() {
       </button>
 
       <div className="ml-auto flex items-center gap-1.5">
+        {/* Dual-Mode AI Engine Status Badge */}
+        <Tip
+          content={
+            aiConfigured
+              ? "Gemini 2.5 Active: Multimodal LLM & tone scoring online with automatic fallback resilience."
+              : "Offline Rubric Mode: Deterministic rubric explanations and zero-network local fallback active."
+          }
+        >
+          <button
+            type="button"
+            onClick={() => {
+              toast.info(
+                aiConfigured ? "✦ Dual-Mode AI: Gemini Active" : "✦ Dual-Mode AI: Offline Rubric Mode",
+                {
+                  description: aiConfigured
+                    ? "Gemini 2.5 Flash is actively generating contextual rewrites with full fallback protection."
+                    : "Zero external network dependencies required. Deterministic rubric explanations guarantee uptime.",
+                }
+              );
+            }}
+            className={cn(
+              "hidden sm:inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold tracking-wide transition-all shadow-sm border",
+              aiConfigured
+                ? "bg-purple-500/10 text-purple-400 border-purple-500/30 hover:bg-purple-500/20"
+                : "bg-slate-500/10 text-slate-400 border-slate-500/30 hover:bg-slate-500/20"
+            )}
+          >
+            <span>✦</span>
+            <span>{aiConfigured ? "Gemini 2.5 Active" : "Offline Rubric Mode"}</span>
+          </button>
+        </Tip>
+
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
             <Button variant="ghost" size="sm" className="hidden max-w-[280px] lg:inline-flex" aria-label={`Organization: ${org.name}`}>

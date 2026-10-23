@@ -32,13 +32,14 @@ export function AppShell() {
     "mod+k": () => set({ commandOpen: !useUiStore.getState().commandOpen }),
     "?": () => set({ helpOpen: true }),
     "g d": () => navigate("/"),
-    "g r": () => navigate("/runs"),
-    "g q": () => navigate("/review"),
-    "g u": () => navigate("/rules"),
-    "g p": () => navigate("/reports"),
+    "g c": () => navigate("/campaigns"),
+    "g q": () => navigate("/queue"),
+    "g b": () => navigate("/brain"),
+    "g i": () => navigate("/brands"),
+    "g l": () => navigate("/analytics"),
     "g a": () => navigate("/audit"),
     "g s": () => navigate("/settings"),
-    n: () => navigate("/runs/new"),
+    n: () => navigate("/campaigns/new"),
   });
 
   return (
